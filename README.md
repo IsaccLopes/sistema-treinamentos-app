@@ -1,48 +1,28 @@
-# Sistema de Treinamentos ADM - versão pública segura
+# Sistema de Treinamentos ADM - V2 LGPD
 
-Esta versão é para repositório público no GitHub Pages.
+Versão pública sem base de dados no GitHub. Os dados ficam protegidos no Supabase.
 
-Ela NÃO contém:
+## Novidades
 
-- data.js com matriz;
-- CSVs;
-- nomes reais;
-- matrículas reais;
-- planilha;
-- dados da empresa.
+- Percentual de aderência geral e por filtro/setor.
+- Aderência por treinamento.
+- Aderência por setor.
+- Vencimentos em 30, 60 e 90 dias.
+- Anexo em cadastro de novo treinamento.
+- Anexo em reciclagem/integração.
+- Histórico de lançamentos: integração, reciclagem, ajuste manual e não se aplica.
+- Edição do vínculo colaborador x treinamento mantendo histórico.
+- QR Code mais limpo para celular: mostra apenas em dia/atrasados/devendo.
 
-A base fica somente no Supabase.
+## Ordem de atualização
 
-## Ordem correta
+1. No Supabase, rode `supabase/05_indicadores_anexos_historico.sql`.
+2. No GitHub, substitua estes arquivos na raiz do repositório público:
+   - `index.html`
+   - `style.css`
+   - `app.js`
+   - `README.md`
+3. Commit sugerido: `Adicionar indicadores e histórico de treinamentos`.
+4. Abra o site e use Ctrl + F5.
 
-1. Rode `supabase/04_lgpd_seguro.sql` no SQL Editor do Supabase.
-2. Crie o primeiro usuário em Supabase > Authentication > Users.
-3. Vincule o UID desse usuário na tabela `usuarios_app` com perfil `gerencia`.
-4. Publique no GitHub público somente:
-   - index.html
-   - style.css
-   - app.js
-   - README.md
-5. Não publique a pasta `supabase` se não quiser. Ela é só instrução local.
-
-## Login
-
-O login é pelo Supabase Auth, usando e-mail e senha.
-
-Por segurança, o app público não cria senha diretamente no navegador. Para novo técnico/gerência:
-
-1. A gerência cadastra/vincula o acesso na tela Acessos.
-2. O usuário precisa existir em Supabase Authentication.
-3. O campo `auth_user_id` precisa estar vinculado ao UID do usuário.
-
-Isso evita colocar `service_role` ou senha sensível no GitHub Pages.
-
-## QR Code
-
-O QR usa `qr_token`, não matrícula.
-
-Exemplo:
-
-`https://seuusuario.github.io/sistema-treinamentos-app/?qr=TOKEN`
-
-Quem escaneia não acessa tabelas. O site chama uma RPC segura que retorna apenas os treinamentos daquele token.
+Não suba CSV, matriz, planilha ou `data.js` neste repositório público.

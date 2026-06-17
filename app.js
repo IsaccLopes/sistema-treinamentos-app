@@ -14,7 +14,7 @@ const STATUS_LABEL = {
 let supabaseClient;
 let session = null;
 let perfil = null;
-let db = { colaboradores: [], treinamentos: [], matriz: [], agenda: [], usuarios: [], auditoria: [] };
+let db = { colaboradores: [], treinamentos: [], matriz: [], agenda: [], usuarios: [], auditoria: [], historico: [] };
 let statusAtivo = "vencido";
 let selecionadosAtualizacao = new Set();
 
@@ -59,7 +59,7 @@ function bindEvents(){
   $("loginForm").addEventListener("submit", login);
   $("btnSair").addEventListener("click", () => logout());
   document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => abrirPainel(btn.dataset.view)));
-  document.querySelectorAll(".kpi").forEach(btn => btn.addEventListener("click", () => { statusAtivo = btn.dataset.status; renderDashboard(); }));
+  document.querySelectorAll(".kpi[data-status]").forEach(btn => btn.addEventListener("click", () => { statusAtivo = btn.dataset.status; renderDashboard(); }));
   ["dashFiltroTexto","dashFiltroSetor","dashFiltroTreinamento"].forEach(id => $(id).addEventListener("input", renderDashboard));
   $("btnLimparFiltros").addEventListener("click", () => { $("dashFiltroTexto").value=""; $("dashFiltroSetor").value=""; $("dashFiltroTreinamento").value=""; renderDashboard(); });
   $("btnReload").addEventListener("click", async () => { await loadAll(); renderAll(); toast("Dados atualizados."); });
@@ -82,6 +82,10 @@ function bindEvents(){
   $("btnSalvarTreinamento").addEventListener("click", salvarTreinamento);
   $("btnSalvarAgenda").addEventListener("click", salvarAgenda);
   $("btnSalvarAcesso").addEventListener("click", salvarAcesso);
+  if($("btnFecharModalVinculo")) $("btnFecharModalVinculo").addEventListener("click", fecharModalVinculo);
+  if($("btnSalvarModalVinculo")) $("btnSalvarModalVinculo").addEventListener("click", salvarModalVinculo);
+  if($("modalData")) $("modalData").addEventListener("change", calcularValidadeModal);
+  if($("modalTreId")) $("modalTreId").addEventListener("change", calcularValidadeModal);
 }
 
 async function login(ev){
@@ -144,15 +148,16 @@ function abrirPainel(view){
 }
 
 async function loadAll(){
-  const [colabs, treinamentos, matriz, agenda, usuarios, auditoria] = await Promise.all([
+  const [colabs, treinamentos, matriz, agenda, usuarios, auditoria, historico] = await Promise.all([
     selectAll("colaboradores", "*") ,
     selectAll("treinamentos", "*"),
     selectAll("matriz_treinamentos", "*"),
     selectAll("agenda_treinamentos", "*"),
     perfil?.perfil === "gerencia" ? selectAll("usuarios_app", "*") : Promise.resolve([]),
-    selectAll("auditoria_treinamentos", "*")
+    selectAll("auditoria_treinamentos", "*"),
+    selectAll("historico_treinamentos", "*").catch(() => [])
   ]);
-  db = { colaboradores: colabs || [], treinamentos: treinamentos || [], matriz: matriz || [], agenda: agenda || [], usuarios: usuarios || [], auditoria: auditoria || [] };
+  db = { colaboradores: colabs || [], treinamentos: treinamentos || [], matriz: matriz || [], agenda: agenda || [], usuarios: usuarios || [], auditoria: auditoria || [], historico: historico || [] };
 }
 
 async function selectAll(table, columns="*"){
@@ -189,15 +194,23 @@ function calcStatus(row){
   if(["nao_aplica","não aplica","nao se aplica"].includes(tipo)) return {status:"nao_aplica", label:"Não se aplica"};
   if(tipo.includes("afast")) return {status:"afastado", label:"Afastado"};
   if(tipo.includes("solicit")) return {status:"solicitado", label:"Solicitado"};
+  if(tipo.includes("pendent")) return {status:"pendente", label:"Pendente"};
   const base = row.data_validade || (row.data_realizacao && t.periodicidade_dias ? addDays(row.data_realizacao, t.periodicidade_dias) : "");
   if(!base) return {status:"devendo", label:"Devendo", detalhe:"Sem data registrada"};
   const venc = new Date(`${base}T00:00:00`);
   const agora = today();
   const dias = Math.ceil((venc - agora) / 86400000);
-  if(dias < 0) return {status:"vencido", label:"Vencido", dias, detalhe:`Venceu há ${Math.abs(dias)} dia(s)`};
-  if(dias <= 30) return {status:"vencendo", label:"Vencendo", dias, detalhe: dias === 0 ? "Vence hoje" : `Faltam ${dias} dia(s)`};
-  return {status:"em_dia", label:"Em dia", dias, detalhe:`Válido até ${brDate(base)}`};
+  if(dias < 0) return {status:"vencido", label:"Vencido", dias, faixa:"vencido", detalhe:`Venceu há ${Math.abs(dias)} dia(s)`};
+  if(dias <= 30) return {status:"vencendo", label:"Vencendo", dias, faixa:"30", detalhe: dias === 0 ? "Vence hoje" : `Faltam ${dias} dia(s)`};
+  if(dias <= 60) return {status:"em_dia", label:"Em dia", dias, faixa:"60", detalhe:`Faltam ${dias} dia(s)`};
+  if(dias <= 90) return {status:"em_dia", label:"Em dia", dias, faixa:"90", detalhe:`Faltam ${dias} dia(s)`};
+  return {status:"em_dia", label:"Em dia", dias, faixa:"ok", detalhe:`Válido até ${brDate(base)}`};
 }
+
+function isAplicavel(l){ return !["nao_aplica","afastado","pendente","solicitado"].includes(l.status); }
+function isValido(l){ return ["em_dia","vencendo"].includes(l.status); }
+function pct(num, den){ return den ? `${Math.round((num/den)*100)}%` : "0%"; }
+function tipoLancamentoLabel(v){ return ({integracao:"Integração", reciclagem:"Reciclagem", ajuste:"Ajuste", nao_aplica:"Não se aplica"}[v] || v || "-"); }
 
 function linhasStatus(){
   return db.matriz.map(r => {
@@ -241,27 +254,39 @@ function pessoasSemPendencia(linhas){
 
 function renderDashboard(){
   const linhas = linhasFiltradas();
+  const todasLinhas = linhasStatus();
   const gVencido = agruparPorColaborador(linhas,"vencido");
   const gVencendo = agruparPorColaborador(linhas,"vencendo");
   const gDevendo = agruparPorColaborador(linhas,"devendo");
   const ok = pessoasSemPendencia(linhas);
+
+  const aplGeral = todasLinhas.filter(isAplicavel);
+  const valGeral = aplGeral.filter(isValido);
+  const aplFiltro = linhas.filter(isAplicavel);
+  const valFiltro = aplFiltro.filter(isValido);
+
   $("kpiVencidos").textContent = gVencido.length;
   $("kpiVencendo").textContent = gVencendo.length;
   $("kpiDevendo").textContent = gDevendo.length;
   $("kpiOk").textContent = ok.length;
   $("kpiColaboradores").textContent = db.colaboradores.filter(c => c.ativo !== false).length;
-  document.querySelectorAll(".kpi").forEach(k => k.classList.toggle("active", k.dataset.status === statusAtivo));
+  if($("kpiAderenciaGeral")) $("kpiAderenciaGeral").textContent = pct(valGeral.length, aplGeral.length);
+  if($("kpiAderenciaArea")) $("kpiAderenciaArea").textContent = pct(valFiltro.length, aplFiltro.length);
+
+  document.querySelectorAll(".kpi[data-status]").forEach(k => k.classList.toggle("active", k.dataset.status === statusAtivo));
   let grupos;
   if(statusAtivo === "vencido") grupos = gVencido;
   else if(statusAtivo === "vencendo") grupos = gVencendo;
   else if(statusAtivo === "devendo") grupos = gDevendo;
-  else if(statusAtivo === "ok") grupos = ok.map(c => ({colaborador:c, itens:linhas.filter(l=>l.colaborador.id===c.id && l.status === "em_dia")}));
+  else if(statusAtivo === "ok") grupos = ok.map(c => ({colaborador:c, itens:linhas.filter(l=>l.colaborador.id===c.id && isValido(l))}));
   else grupos = agruparPorColaborador(linhas,"todos");
-  const titulos = {vencido:"Colaboradores com treinamentos vencidos", vencendo:"Colaboradores com treinamentos vencendo", devendo:"Colaboradores devendo treinamentos", ok:"Colaboradores sem pendência crítica", todos:"Todos os colaboradores"};
+  const titulos = {vencido:"Colaboradores com treinamentos vencidos", vencendo:"Colaboradores com treinamentos vencendo em até 30 dias", devendo:"Colaboradores devendo treinamentos", ok:"Colaboradores sem pendência crítica", todos:"Todos os colaboradores"};
   $("listaTitulo").textContent = titulos[statusAtivo] || titulos.vencido;
   $("listaResumo").textContent = `${grupos.length} pessoa(s)`;
   $("listaAgrupada").innerHTML = grupos.map(renderGrupo).join("") || `<div class="empty">Nenhum colaborador encontrado para esse filtro.</div>`;
   renderVencendoDias(linhas);
+  renderAderenciaTreinamento(linhas);
+  renderAderenciaSetor(linhas);
 }
 
 function renderGrupo(g){
@@ -270,8 +295,8 @@ function renderGrupo(g){
   const resumo = Object.entries(statusCount).map(([s,q]) => `${q} ${STATUS_LABEL[s] || s}`).join(" • ");
   const detalhes = g.itens.sort((a,b)=>(a.dias??9999)-(b.dias??9999)).map(i => `
     <div class="detail-row">
-      <span><strong>${escapeHtml(i.treinamento.nome)}</strong><br><small>${i.detalhe || ""} • validade: ${brDate(i.validade)}</small></span>
-      <span class="status ${i.status}">${STATUS_LABEL[i.status] || i.status}</span>
+      <span><strong>${escapeHtml(i.treinamento.nome)}</strong><br><small>${i.detalhe || ""} • validade: ${brDate(i.validade)} • ${tipoLancamentoLabel(i.row.tipo_lancamento)}</small></span>
+      <span class="detail-actions"><span class="status ${i.status}">${STATUS_LABEL[i.status] || i.status}</span><button class="btn secondary mini" onclick="abrirEditarVinculo('${escapeHtml(i.colaborador.id)}','${escapeHtml(i.treinamento.id)}')">Editar</button></span>
     </div>`).join("");
   const id = `det-${escapeHtml(c.id).replace(/[^a-zA-Z0-9]/g,"")}`;
   return `<div class="group-item">
@@ -286,12 +311,63 @@ function renderGrupo(g){
 window.toggleDetalhe = (id) => $(id)?.classList.toggle("open");
 
 function renderVencendoDias(linhas){
-  const v = linhas.filter(l => l.status === "vencendo").sort((a,b)=>a.dias-b.dias || a.colaborador.nome.localeCompare(b.colaborador.nome)).slice(0,60);
-  $("listaVencendoDias").innerHTML = v.map(l => `<div class="alert-item">
-    <span class="status vencendo">${l.dias === 0 ? "vence hoje" : `faltam ${l.dias} dias`}</span>
-    <strong>${escapeHtml(l.colaborador.nome)}</strong>
-    <small>${escapeHtml(l.treinamento.nome)} • ${escapeHtml(l.colaborador.setor || "")} • validade ${brDate(l.validade)}</small>
-  </div>`).join("") || `<div class="empty">Nenhum treinamento vencendo em até 30 dias.</div>`;
+  const v = linhas
+    .filter(l => isAplicavel(l) && typeof l.dias === "number" && l.dias >= 0 && l.dias <= 90)
+    .sort((a,b)=>a.dias-b.dias || a.colaborador.nome.localeCompare(b.colaborador.nome));
+
+  const faixas = [
+    {label:"Até 30 dias", cls:"vencendo", itens:v.filter(l=>l.dias<=30)},
+    {label:"31 a 60 dias", cls:"solicitado", itens:v.filter(l=>l.dias>30 && l.dias<=60)},
+    {label:"61 a 90 dias", cls:"ok", itens:v.filter(l=>l.dias>60 && l.dias<=90)}
+  ];
+
+  $("listaVencendoDias").innerHTML = faixas.map(f => `
+    <div class="faixa-vencimento">
+      <div class="card-head compact"><h4>${f.label}</h4><span class="chip">${f.itens.length}</span></div>
+      ${f.itens.slice(0,30).map(l => `<div class="alert-item compact-alert">
+        <span class="status ${f.cls}">${l.dias === 0 ? "vence hoje" : `faltam ${l.dias} dias`}</span>
+        <strong>${escapeHtml(l.colaborador.nome)}</strong>
+        <small>${escapeHtml(l.treinamento.nome)} • ${escapeHtml(l.colaborador.setor || "")} • validade ${brDate(l.validade)}</small>
+      </div>`).join("") || `<div class="empty small-empty">Nenhum item nessa faixa.</div>`}
+    </div>`).join("");
+}
+
+function renderAderenciaTreinamento(linhas){
+  if(!$("aderenciaTreinamento")) return;
+  const map = new Map();
+  linhas.filter(isAplicavel).forEach(l => {
+    const id = l.treinamento.id;
+    if(!map.has(id)) map.set(id, { nome:l.treinamento.nome, total:0, validos:0, vencidos:0, devendo:0 });
+    const item = map.get(id);
+    item.total++;
+    if(isValido(l)) item.validos++;
+    if(l.status === "vencido") item.vencidos++;
+    if(l.status === "devendo") item.devendo++;
+  });
+  const arr = [...map.values()].sort((a,b)=>(a.validos/a.total)-(b.validos/b.total) || b.total-a.total).slice(0,40);
+  $("aderenciaTreinamento").innerHTML = arr.map(x => `<div class="adherence-row">
+    <div><strong>${escapeHtml(x.nome)}</strong><small>${x.validos}/${x.total} em dia • ${x.vencidos} vencido(s) • ${x.devendo} devendo</small></div>
+    <span class="chip">${pct(x.validos,x.total)}</span>
+  </div>`).join("") || `<div class="empty">Sem dados para o filtro.</div>`;
+}
+
+function renderAderenciaSetor(linhas){
+  if(!$("aderenciaSetor")) return;
+  const map = new Map();
+  linhas.filter(isAplicavel).forEach(l => {
+    const id = l.colaborador.setor || "Sem setor";
+    if(!map.has(id)) map.set(id, { nome:id, total:0, validos:0, vencidos:0, devendo:0 });
+    const item = map.get(id);
+    item.total++;
+    if(isValido(l)) item.validos++;
+    if(l.status === "vencido") item.vencidos++;
+    if(l.status === "devendo") item.devendo++;
+  });
+  const arr = [...map.values()].sort((a,b)=>(a.validos/a.total)-(b.validos/b.total) || a.nome.localeCompare(b.nome));
+  $("aderenciaSetor").innerHTML = arr.map(x => `<div class="adherence-row">
+    <div><strong>${escapeHtml(x.nome)}</strong><small>${x.validos}/${x.total} em dia • ${x.vencidos} vencido(s) • ${x.devendo} devendo</small></div>
+    <span class="chip">${pct(x.validos,x.total)}</span>
+  </div>`).join("") || `<div class="empty">Sem dados para o filtro.</div>`;
 }
 
 function consultaInterna(){
@@ -305,7 +381,7 @@ function consultaInterna(){
 function renderFicha(c, target){
   const linhas = linhasStatus().filter(l => l.colaborador.id === c.id).sort((a,b)=>a.status.localeCompare(b.status));
   target.innerHTML = `<div class="profile-head"><h3>${escapeHtml(c.nome)}</h3><p>${escapeHtml(c.matricula || "sem matrícula")} • ${escapeHtml(c.setor || "sem setor")} • ${escapeHtml(c.funcao || "")}</p></div>
-    <div class="alert-list">${linhas.map(l => `<div class="alert-item"><span class="status ${l.status}">${STATUS_LABEL[l.status] || l.status}</span><strong>${escapeHtml(l.treinamento.nome)}</strong><small>${l.detalhe || ""} • realizado: ${brDate(l.row.data_realizacao)} • validade: ${brDate(l.validade)}</small></div>`).join("") || `<div class="empty">Sem treinamentos vinculados.</div>`}</div>`;
+    <div class="alert-list">${linhas.map(l => `<div class="alert-item"><span class="status ${l.status}">${STATUS_LABEL[l.status] || l.status}</span><strong>${escapeHtml(l.treinamento.nome)}</strong><small>${l.detalhe || ""} • realizado: ${brDate(l.row.data_realizacao)} • validade: ${brDate(l.validade)} • ${tipoLancamentoLabel(l.row.tipo_lancamento)}</small><div class="row-mini"><button class="btn secondary mini" onclick="abrirEditarVinculo('${escapeHtml(l.colaborador.id)}','${escapeHtml(l.treinamento.id)}')">Editar vínculo</button></div></div>`).join("") || `<div class="empty">Sem treinamentos vinculados.</div>`}</div>`;
 }
 
 function renderQrSelect(){
@@ -336,141 +412,44 @@ async function copiarQr(){
 }
 
 async function showPublicQr(token){
-  $("loginView").classList.add("hidden");
-  $("appView").classList.add("hidden");
-  $("publicView").classList.remove("hidden");
-
+  $("loginView").classList.add("hidden"); $("appView").classList.add("hidden"); $("publicView").classList.remove("hidden");
   const { data, error } = await supabaseClient.rpc("consultar_treinamentos_qr", { p_token: token });
-
-  if(error){
-    console.error(error);
-    $("publicContent").innerHTML = `<div class="empty">QR inválido ou acesso bloqueado.</div>`;
-    return;
-  }
-
+  if(error){ console.error(error); $("publicContent").innerHTML = `<div class="empty">QR inválido ou acesso bloqueado.</div>`; return; }
   const payload = Array.isArray(data) ? data[0] : data;
-
-  if(!payload || !payload.colaborador){
-    $("publicContent").innerHTML = `<div class="empty">QR não encontrado.</div>`;
-    return;
-  }
-
+  if(!payload || !payload.colaborador){ $("publicContent").innerHTML = `<div class="empty">QR não encontrado.</div>`; return; }
   const c = payload.colaborador;
-
   $("publicTitle").textContent = c.nome;
   $("publicSubtitle").textContent = `${c.matricula || "sem matrícula"} • ${c.setor || "sem setor"}`;
-
   const linhas = (payload.treinamentos || []).map(x => {
-    const fakeT = {
-      id: x.treinamento_id,
-      nome: x.treinamento_nome,
-      periodicidade_dias: x.periodicidade_dias
-    };
+    const fakeT = {id:x.treinamento_id, nome:x.treinamento_nome, periodicidade_dias:x.periodicidade_dias};
+    const fakeR = {treinamento_id:x.treinamento_id, tipo:x.tipo, data_realizacao:x.data_realizacao, data_validade:x.data_validade};
+    const old = db; db = {colaboradores:[c], treinamentos:[fakeT], matriz:[fakeR], agenda:[], usuarios:[], auditoria:[], historico:[]};
+    const s = calcStatus(fakeR); db = old;
+    const validade = x.data_validade || (x.data_realizacao && x.periodicidade_dias ? addDays(x.data_realizacao, x.periodicidade_dias) : "");
+    return {...x, ...s, validade};
+  }).filter(l => ["em_dia","vencendo","vencido","devendo"].includes(l.status));
 
-    const fakeR = {
-      treinamento_id: x.treinamento_id,
-      tipo: x.tipo,
-      data_realizacao: x.data_realizacao,
-      data_validade: x.data_validade
-    };
+  const atrasados = linhas.filter(l => ["vencido","devendo"].includes(l.status)).sort((a,b)=>(a.dias??9999)-(b.dias??9999));
+  const validos = linhas.filter(l => ["em_dia","vencendo"].includes(l.status)).sort((a,b)=>a.treinamento_nome.localeCompare(b.treinamento_nome));
 
-    const old = db;
-    db = {
-      colaboradores: [c],
-      treinamentos: [fakeT],
-      matriz: [fakeR],
-      agenda: [],
-      usuarios: [],
-      auditoria: []
-    };
-
-    const s = calcStatus(fakeR);
-    db = old;
-
-    const validade = x.data_validade || (
-      x.data_realizacao && x.periodicidade_dias
-        ? addDays(x.data_realizacao, x.periodicidade_dias)
-        : ""
-    );
-
-    return { ...x, ...s, validade };
-  });
-
-  // QR do campo: mostra só o que interessa.
-  // Não mostra "Não se aplica", afastado, solicitado ou pendente.
-  const visiveis = linhas.filter(l =>
-    ["em_dia", "vencendo", "vencido", "devendo"].includes(l.status)
-  );
-
-  const pendencias = visiveis
-    .filter(l => ["vencido", "devendo"].includes(l.status))
-    .sort((a, b) => (a.dias ?? 9999) - (b.dias ?? 9999));
-
-  const emDia = visiveis
-    .filter(l => ["em_dia", "vencendo"].includes(l.status))
-    .sort((a, b) => a.treinamento_nome.localeCompare(b.treinamento_nome));
-
-  const total = visiveis.length;
-  const totalEmDia = emDia.length;
-  const totalPendencias = pendencias.length;
-
-  const renderLinhaPublica = (l) => {
-    const atrasado = ["vencido", "devendo"].includes(l.status);
-    const classe = atrasado ? "vencido" : "em_dia";
-    const rotulo = atrasado ? "Atrasado" : "Em dia";
-
-    let detalhe = "";
-
-    if(l.status === "devendo"){
-      detalhe = "Sem registro de realização/validade.";
-    }else if(l.status === "vencido"){
-      detalhe = `${l.detalhe || "Treinamento vencido."} • validade: ${brDate(l.validade)}`;
-    }else if(l.status === "vencendo"){
-      detalhe = `Ainda válido • ${l.detalhe || ""} • validade: ${brDate(l.validade)}`;
-    }else{
-      detalhe = `Válido até ${brDate(l.validade)}`;
-    }
-
-    return `
-      <div class="alert-item public-training-card ${classe}">
-        <span class="status ${classe}">${rotulo}</span>
-        <strong>${escapeHtml(l.treinamento_nome)}</strong>
-        <small>${escapeHtml(detalhe)}</small>
-      </div>
-    `;
+  const renderPublicLine = (l) => {
+    const ruim = ["vencido","devendo"].includes(l.status);
+    const detalhe = l.status === "devendo" ? "Sem registro de realização/validade." : `${l.detalhe || ""} • validade: ${brDate(l.validade)}`;
+    return `<div class="alert-item public-training-card ${ruim ? "vencido" : "em_dia"}">
+      <span class="status ${ruim ? "vencido" : "em_dia"}">${ruim ? "Atrasado" : "Em dia"}</span>
+      <strong>${escapeHtml(l.treinamento_nome)}</strong>
+      <small>${escapeHtml(detalhe)}</small>
+    </div>`;
   };
 
   $("publicContent").innerHTML = `
     <div class="qr-summary">
-      <div>
-        <span>Em dia</span>
-        <strong>${totalEmDia}</strong>
-      </div>
-      <div class="${totalPendencias > 0 ? "danger" : ""}">
-        <span>Atrasados</span>
-        <strong>${totalPendencias}</strong>
-      </div>
-      <div>
-        <span>Total exibido</span>
-        <strong>${total}</strong>
-      </div>
+      <div><span>Em dia</span><strong>${validos.length}</strong></div>
+      <div class="danger"><span>Atrasados</span><strong>${atrasados.length}</strong></div>
+      <div><span>Total</span><strong>${linhas.length}</strong></div>
     </div>
-
-    ${pendencias.length ? `
-      <div class="qr-section-title danger">Atenção: treinamentos atrasados</div>
-      <div class="alert-list public-list">
-        ${pendencias.map(renderLinhaPublica).join("")}
-      </div>
-    ` : `
-      <div class="qr-ok-banner">Nenhum treinamento atrasado encontrado.</div>
-    `}
-
-    ${emDia.length ? `
-      <div class="qr-section-title">Treinamentos em dia</div>
-      <div class="alert-list public-list">
-        ${emDia.map(renderLinhaPublica).join("")}
-      </div>
-    ` : ""}
+    ${atrasados.length ? `<div class="qr-section-title danger">Treinamentos atrasados</div><div class="alert-list public-list">${atrasados.map(renderPublicLine).join("")}</div>` : `<div class="qr-ok-banner">Nenhum treinamento atrasado encontrado.</div>`}
+    ${validos.length ? `<div class="qr-section-title">Treinamentos em dia</div><div class="alert-list public-list">${validos.map(renderPublicLine).join("")}</div>` : ""}
   `;
 }
 
@@ -489,13 +468,19 @@ function calcularValidadeUpdate(){
 }
 
 async function salvarAtualizacao(){
-  const ids = [...selecionadosAtualizacao]; const treinamentoId = $("updTreinamento").value; const data = $("updData").value; let validade = $("updValidade").value; const obs = $("updObs").value.trim();
+  const ids = [...selecionadosAtualizacao]; const treinamentoId = $("updTreinamento").value; const data = $("updData").value; let validade = $("updValidade").value; const obs = $("updObs").value.trim(); const origem = $("updOrigem")?.value || "reciclagem";
   if(!ids.length || !treinamentoId || !data){ toast("Selecione pessoas, treinamento e data realizada."); return; }
   const tre = treinamentoById(treinamentoId); if(!validade && tre.periodicidade_dias && !tre.validade_direta) validade = addDays(data, tre.periodicidade_dias);
-  const rows = ids.map(id => ({ colaborador_id:id, treinamento_id:treinamentoId, tipo:"data", data_realizacao:data, data_validade:validade || null, observacao:obs, atualizado_por:perfil.usuario }));
+  let anexo = { path:null, name:null };
+  const file = $("updAnexo")?.files?.[0];
+  if(file) anexo = await uploadAnexo(file, `reciclagens/${treinamentoId}`);
+
+  const rows = ids.map(id => ({ colaborador_id:id, treinamento_id:treinamentoId, tipo:"data", tipo_lancamento:origem, data_realizacao:data, data_validade:validade || null, observacao:obs, anexo_url:anexo.path, anexo_nome:anexo.name, atualizado_por:perfil.usuario }));
+  await gravarHistoricoAntes(ids, treinamentoId, origem, rows[0], "lancar_treinamento");
   const { error } = await supabaseClient.from("matriz_treinamentos").upsert(rows, { onConflict:"colaborador_id,treinamento_id" });
-  if(error){ console.error(error); toast("Erro ao salvar atualização."); return; }
-  await auditar("reciclagem", { treinamentoId, qtd:ids.length, data, validade });
+  if(error){ console.error(error); toast("Erro ao salvar atualização. Rode o SQL 05 se ainda não rodou."); return; }
+  await auditar(origem === "integracao" ? "integracao" : "reciclagem", { treinamentoId, qtd:ids.length, data, validade, anexo:anexo.name });
+  if($("updAnexo")) $("updAnexo").value = "";
   await loadAll(); renderAll(); toast("Treinamento atualizado com sucesso.");
 }
 
@@ -533,10 +518,14 @@ async function excluirColaborador(){
 async function salvarTreinamento(){
   const nome = $("treNome").value.trim(); const dias = Number($("treDias").value || 0); const setores = $("treSetores").value.trim();
   if(!nome){ toast("Informe o nome do treinamento."); return; }
-  const row = { id:`tre-${Date.now()}`, nome, periodicidade:`${dias || 0} dias`, periodicidade_dias:dias || null, validade_direta:$("treValidadeDireta").checked, ativo:true, setores_aplicaveis:setores ? setores.split(",").map(s=>s.trim()).filter(Boolean) : [] };
+  let anexo = { path:null, name:null };
+  const file = $("treAnexo")?.files?.[0];
+  if(file) anexo = await uploadAnexo(file, `catalogo/${Date.now()}`);
+  const row = { id:`tre-${Date.now()}`, nome, periodicidade:`${dias || 0} dias`, periodicidade_dias:dias || null, validade_direta:$("treValidadeDireta").checked, ativo:true, setores_aplicaveis:setores ? setores.split(",").map(s=>s.trim()).filter(Boolean) : [], anexo_url:anexo.path, anexo_nome:anexo.name };
   const { error } = await supabaseClient.from("treinamentos").insert(row);
-  if(error){ console.error(error); toast("Erro ao cadastrar treinamento. Rode o SQL LGPD para adicionar setores_aplicaveis."); return; }
-  await auditar("cadastrar_treinamento", { nome, dias, setores });
+  if(error){ console.error(error); toast("Erro ao cadastrar treinamento. Rode o SQL 05 antes."); return; }
+  await auditar("cadastrar_treinamento", { nome, dias, setores, anexo:anexo.name });
+  ["treNome","treDias","treSetores"].forEach(id => $(id).value=""); if($("treAnexo")) $("treAnexo").value="";
   await loadAll(); hydrateSelects(); renderAll(); toast("Treinamento cadastrado.");
 }
 
@@ -545,6 +534,79 @@ function renderBaseColabs(){
   const q = norm($("baseBusca").value);
   const rows = db.colaboradores.filter(c => !q || `${c.matricula} ${c.nome} ${c.setor} ${c.funcao}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,500);
   $("tbodyColabs").innerHTML = rows.map(c => `<tr><td>${escapeHtml(c.matricula||"")}</td><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.setor||"")}</td><td>${escapeHtml(c.funcao||"")}</td><td>${c.ativo!==false?"Ativo":"Inativo"}</td><td><button class="btn secondary" onclick="editarColab('${escapeHtml(c.id)}')">Editar</button></td></tr>`).join("");
+}
+
+async function uploadAnexo(file, pasta="anexos"){
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+  const path = `${pasta}/${Date.now()}-${safeName}`;
+  const { error } = await supabaseClient.storage.from("treinamentos-anexos").upload(path, file, { upsert:false });
+  if(error){ console.error(error); toast("Não consegui enviar o anexo. Verifique o SQL 05 e as políticas do Storage."); throw error; }
+  return { path, name:file.name };
+}
+
+async function gravarHistoricoAntes(colaboradorIds, treinamentoId, origem, novo, acao){
+  const rows = colaboradorIds.map(cid => {
+    const anterior = db.matriz.find(m => m.colaborador_id === cid && m.treinamento_id === treinamentoId) || null;
+    return {
+      colaborador_id: cid,
+      treinamento_id: treinamentoId,
+      acao,
+      tipo_lancamento: origem,
+      data_realizacao: novo.data_realizacao || null,
+      data_validade: novo.data_validade || null,
+      observacao: novo.observacao || null,
+      anexo_url: novo.anexo_url || null,
+      anexo_nome: novo.anexo_nome || null,
+      anterior,
+      novo,
+      usuario: perfil?.usuario || session?.user?.email
+    };
+  });
+  const { error } = await supabaseClient.from("historico_treinamentos").insert(rows);
+  if(error) console.warn("Histórico não gravado:", error);
+}
+
+function historicoDoVinculo(colaboradorId, treinamentoId){
+  return (db.historico || [])
+    .filter(h => h.colaborador_id === colaboradorId && h.treinamento_id === treinamentoId)
+    .sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+}
+
+window.abrirEditarVinculo = (colaboradorId, treinamentoId) => {
+  const c = colaboradorById(colaboradorId); const t = treinamentoById(treinamentoId);
+  const row = db.matriz.find(m => m.colaborador_id === colaboradorId && m.treinamento_id === treinamentoId) || { colaborador_id:colaboradorId, treinamento_id:treinamentoId, tipo:"em_branco" };
+  $("modalColabId").value = colaboradorId;
+  $("modalTreId").value = treinamentoId;
+  $("modalTituloVinculo").textContent = `${c.nome || "Colaborador"} • ${t.nome || "Treinamento"}`;
+  $("modalTipo").value = row.tipo || "em_branco";
+  $("modalOrigem").value = row.tipo_lancamento || (row.tipo === "nao_aplica" ? "nao_aplica" : "ajuste");
+  $("modalData").value = row.data_realizacao || "";
+  $("modalValidade").value = row.data_validade || "";
+  $("modalObs").value = row.observacao || "";
+  if($("modalAnexo")) $("modalAnexo").value = "";
+  $("modalVinculo").classList.remove("hidden");
+};
+
+function fecharModalVinculo(){ $("modalVinculo").classList.add("hidden"); }
+
+function calcularValidadeModal(){
+  const tre = treinamentoById($("modalTreId").value); const data = $("modalData").value;
+  if(data && tre?.periodicidade_dias && !tre.validade_direta) $("modalValidade").value = addDays(data, tre.periodicidade_dias);
+}
+
+async function salvarModalVinculo(){
+  const colaboradorId = $("modalColabId").value; const treinamentoId = $("modalTreId").value;
+  const tipo = $("modalTipo").value; const origem = $("modalOrigem").value; const data = $("modalData").value || null; const validade = $("modalValidade").value || null; const obs = $("modalObs").value.trim();
+  let anexo = { path:null, name:null };
+  const file = $("modalAnexo")?.files?.[0];
+  if(file) anexo = await uploadAnexo(file, `ajustes/${treinamentoId}`);
+  const anterior = db.matriz.find(m => m.colaborador_id === colaboradorId && m.treinamento_id === treinamentoId) || null;
+  const row = { colaborador_id:colaboradorId, treinamento_id:treinamentoId, tipo, tipo_lancamento:origem, data_realizacao:data, data_validade:validade, observacao:obs, anexo_url:anexo.path || anterior?.anexo_url || null, anexo_nome:anexo.name || anterior?.anexo_nome || null, atualizado_por:perfil.usuario };
+  await gravarHistoricoAntes([colaboradorId], treinamentoId, origem, row, tipo === "nao_aplica" ? "marcar_nao_aplica" : "ajustar_vinculo");
+  const { error } = await supabaseClient.from("matriz_treinamentos").upsert(row, { onConflict:"colaborador_id,treinamento_id" });
+  if(error){ console.error(error); toast("Erro ao salvar ajuste. Rode o SQL 05 se ainda não rodou."); return; }
+  await auditar("ajustar_vinculo", { colaboradorId, treinamentoId, tipo, origem });
+  fecharModalVinculo(); await loadAll(); renderAll(); toast("Vínculo atualizado mantendo histórico.");
 }
 
 async function salvarAgenda(){

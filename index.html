@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ADM | Sistema de Treinamentos</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=4" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script defer src="app.js"></script>
+  <script defer src="app.js?v=4"></script>
 </head>
 <body>
   <div id="loading" class="loading">Carregando sistema...</div>
@@ -90,12 +90,14 @@
           <button id="btnLimparFiltros" class="btn secondary">Limpar filtros</button>
         </div>
 
-        <div class="kpi-grid">
+        <div class="kpi-grid kpi-grid-7">
           <button class="kpi active" data-status="vencido"><span>Pessoas com vencidos</span><strong id="kpiVencidos">0</strong><small>agrupado por colaborador</small></button>
           <button class="kpi warn" data-status="vencendo"><span>Pessoas vencendo</span><strong id="kpiVencendo">0</strong><small>próximos 30 dias</small></button>
           <button class="kpi muted" data-status="devendo"><span>Pessoas devendo</span><strong id="kpiDevendo">0</strong><small>sem registro</small></button>
           <button class="kpi success" data-status="ok"><span>Pessoas sem pendência</span><strong id="kpiOk">0</strong><small>sem vencido/vencendo/devendo</small></button>
           <button class="kpi info" data-status="todos"><span>Colaboradores ativos</span><strong id="kpiColaboradores">0</strong><small>base atual</small></button>
+          <div class="kpi percent"><span>Aderência geral</span><strong id="kpiAderenciaGeral">0%</strong><small>site inteiro</small></div>
+          <div class="kpi percent"><span>Aderência no filtro</span><strong id="kpiAderenciaArea">0%</strong><small>setor/treinamento selecionado</small></div>
         </div>
 
         <div class="grid-main">
@@ -108,10 +110,27 @@
           </article>
           <article class="card">
             <div class="card-head">
-              <h3>Vencem nos próximos 30 dias</h3>
+              <h3>Vencimentos 30 / 60 / 90 dias</h3>
               <span class="chip">prioridade</span>
             </div>
             <div id="listaVencendoDias" class="alert-list"></div>
+          </article>
+        </div>
+
+        <div class="grid-two mt">
+          <article class="card">
+            <div class="card-head">
+              <h3>Aderência por treinamento</h3>
+              <span class="chip">% por curso</span>
+            </div>
+            <div id="aderenciaTreinamento" class="adherence-list"></div>
+          </article>
+          <article class="card">
+            <div class="card-head">
+              <h3>Aderência por setor</h3>
+              <span class="chip">% por área</span>
+            </div>
+            <div id="aderenciaSetor" class="adherence-list"></div>
           </article>
         </div>
       </section>
@@ -159,8 +178,10 @@
           <div class="card">
             <h3>Dados do treinamento</h3>
             <label><span>Treinamento</span><select id="updTreinamento"></select></label>
+            <label><span>Tipo de lançamento</span><select id="updOrigem"><option value="reciclagem">Reciclagem</option><option value="integracao">Integração</option><option value="ajuste">Ajuste manual</option></select></label>
             <label><span>Data realizada</span><input id="updData" type="date" /></label>
             <label><span>Validade até</span><input id="updValidade" type="date" /></label>
+            <label><span>Anexo</span><input id="updAnexo" type="file" /></label>
             <label><span>Observação/evidência</span><textarea id="updObs" rows="4" placeholder="Lista de presença, certificado, instrutor..."></textarea></label>
             <div class="selected-count"><strong id="updQtdSelecionados">0</strong> colaborador(es) selecionado(s)</div>
             <button id="btnSalvarAtualizacao" class="btn full">Salvar reciclagem</button>
@@ -190,6 +211,7 @@
             <label><span>Nome</span><input id="treNome" type="text" /></label>
             <label><span>Periodicidade em dias</span><input id="treDias" type="number" min="0" placeholder="365" /></label>
             <label><span>Setores aplicáveis</span><input id="treSetores" type="text" placeholder="Envase, Manutenção ou TODOS" /></label>
+            <label><span>Anexo padrão do treinamento</span><input id="treAnexo" type="file" /></label>
             <label class="inline"><input id="treValidadeDireta" type="checkbox" /> <span>Data lançada já é validade direta</span></label>
             <button id="btnSalvarTreinamento" class="btn full">Cadastrar treinamento</button>
           </div>
@@ -235,6 +257,28 @@
         <div class="card"><div id="auditoriaLista" class="alert-list"></div></div>
       </section>
     </main>
+  </section>
+
+
+  <section id="modalVinculo" class="modal hidden">
+    <div class="modal-card">
+      <div class="card-head">
+        <h3>Ajustar treinamento do colaborador</h3>
+        <button id="btnFecharModalVinculo" class="btn secondary">Fechar</button>
+      </div>
+      <input id="modalColabId" type="hidden" />
+      <input id="modalTreId" type="hidden" />
+      <p id="modalTituloVinculo" class="muted-text">Selecione um vínculo.</p>
+      <label><span>Situação</span><select id="modalTipo"><option value="data">Realizado / válido</option><option value="em_branco">Devendo / sem registro</option><option value="nao_aplica">Não se aplica</option><option value="solicitado">Solicitado</option><option value="afastado">Afastado</option><option value="pendente">Pendente</option></select></label>
+      <label><span>Origem do lançamento</span><select id="modalOrigem"><option value="ajuste">Ajuste manual</option><option value="integracao">Integração</option><option value="reciclagem">Reciclagem</option><option value="nao_aplica">Não se aplica</option></select></label>
+      <div class="grid-two compact-grid">
+        <label><span>Data realizada</span><input id="modalData" type="date" /></label>
+        <label><span>Validade até</span><input id="modalValidade" type="date" /></label>
+      </div>
+      <label><span>Anexo do ajuste</span><input id="modalAnexo" type="file" /></label>
+      <label><span>Motivo / observação</span><textarea id="modalObs" rows="4" placeholder="Ex.: Lucas não executa mais LOTO; treinamento deixou de ser aplicável."></textarea></label>
+      <button id="btnSalvarModalVinculo" class="btn full">Salvar ajuste mantendo histórico</button>
+    </div>
   </section>
 
   <div id="toast" class="toast hidden"></div>
