@@ -59,7 +59,10 @@ function bindEvents(){
   $("loginForm").addEventListener("submit", login);
   $("btnSair").addEventListener("click", () => logout());
   document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => abrirPainel(btn.dataset.view)));
-  document.querySelectorAll(".kpi[data-status]").forEach(btn => btn.addEventListener("click", () => { statusAtivo = btn.dataset.status; renderDashboard(); }));
+document.querySelectorAll("[data-status]").forEach(btn => btn.addEventListener("click", () => {
+  statusAtivo = btn.dataset.status;
+  renderDashboard();
+}));
   ["dashFiltroTexto","dashFiltroSetor","dashFiltroTreinamento"].forEach(id => $(id).addEventListener("input", renderDashboard));
   $("btnLimparFiltros").addEventListener("click", () => { $("dashFiltroTexto").value=""; $("dashFiltroSetor").value=""; $("dashFiltroTreinamento").value=""; renderDashboard(); });
   $("btnReload").addEventListener("click", async () => { await loadAll(); renderAll(); toast("Dados atualizados."); });
