@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ADM | Sistema de Treinamentos</title>
+  <link rel="stylesheet" href="style.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div id="loading" class="loading">Carregando sistema...</div>
+
+  <section id="loginView" class="login-view hidden">
+    <div class="login-card">
+      <div class="adm-logo"><span class="leaf"></span><strong>ADM</strong></div>
+      <h1>Sistema de Treinamentos</h1>
+      <p>Acesso restrito à Segurança do Trabalho, técnicos e gerência.</p>
+      <form id="loginForm" class="form-stack">
+        <label>
+          <span>E-mail</span>
+          <input id="loginEmail" type="email" autocomplete="username" placeholder="seu.email@empresa.com" required />
+        </label>
+        <label>
+          <span>Senha</span>
+          <input id="loginSenha" type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Entrar</button>
+      </form>
+      <div class="security-note">Dados protegidos. Não existe base de colaboradores no GitHub.</div>
+    </div>
+  </section>
+
+  <section id="publicView" class="public-view hidden">
+    <div class="public-card">
+      <div class="top-public">
+        <div class="adm-logo"><span class="leaf"></span><strong>ADM</strong></div>
+        <span class="badge neutral">Somente leitura</span>
+      </div>
+      <h1 id="publicTitle">Consulta de treinamentos</h1>
+      <p id="publicSubtitle">Visualização liberada apenas pelo QR Code do colaborador.</p>
+      <div id="publicContent" class="result-box"></div>
+    </div>
+  </section>
+
+  <section id="appView" class="app hidden">
+    <header class="topbar">
+      <div class="brand">
+        <div class="adm-logo"><span class="leaf"></span><strong>ADM</strong></div>
+        <div>
+          <h1>Sistema de Treinamentos</h1>
+          <p>Base protegida no Supabase • GitHub contém somente código</p>
+        </div>
+      </div>
+      <div class="userbar">
+        <div>
+          <strong id="userName">Usuário</strong>
+          <span id="userRole">perfil</span>
+        </div>
+        <button id="btnSair" class="btn secondary">Sair</button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-view="dashboardPanel">Painel</button>
+      <button class="tab" data-view="consultaPanel">Consulta</button>
+      <button class="tab" data-view="qrPanel">QR Code</button>
+      <button class="tab" data-view="atualizarPanel">Atualizar</button>
+      <button class="tab" data-view="basePanel">Base</button>
+      <button class="tab" data-view="agendaPanel">Agenda</button>
+      <button class="tab manager-only hidden" data-view="acessosPanel">Acessos</button>
+      <button class="tab" data-view="auditoriaPanel">Auditoria</button>
+    </nav>
+
+    <main class="container">
+      <section id="dashboardPanel" class="panel-view">
+        <div class="title-row">
+          <div>
+            <span class="eyebrow">Gestão de treinamentos</span>
+            <h2>Painel resumido por colaborador</h2>
+          </div>
+          <button id="btnReload" class="btn secondary">Atualizar dados</button>
+        </div>
+
+        <div class="filters card">
+          <label><span>Colaborador / matrícula</span><input id="dashFiltroTexto" type="search" placeholder="Buscar nome ou matrícula" /></label>
+          <label><span>Setor</span><select id="dashFiltroSetor"><option value="">Todos</option></select></label>
+          <label><span>Treinamento</span><select id="dashFiltroTreinamento"><option value="">Todos</option></select></label>
+          <button id="btnLimparFiltros" class="btn secondary">Limpar filtros</button>
+        </div>
+
+        <div class="kpi-grid">
+          <button class="kpi active" data-status="vencido"><span>Pessoas com vencidos</span><strong id="kpiVencidos">0</strong><small>agrupado por colaborador</small></button>
+          <button class="kpi warn" data-status="vencendo"><span>Pessoas vencendo</span><strong id="kpiVencendo">0</strong><small>próximos 30 dias</small></button>
+          <button class="kpi muted" data-status="devendo"><span>Pessoas devendo</span><strong id="kpiDevendo">0</strong><small>sem registro</small></button>
+          <button class="kpi success" data-status="ok"><span>Pessoas sem pendência</span><strong id="kpiOk">0</strong><small>sem vencido/vencendo/devendo</small></button>
+          <button class="kpi info" data-status="todos"><span>Colaboradores ativos</span><strong id="kpiColaboradores">0</strong><small>base atual</small></button>
+        </div>
+
+        <div class="grid-main">
+          <article class="card">
+            <div class="card-head">
+              <h3 id="listaTitulo">Colaboradores com treinamentos vencidos</h3>
+              <span id="listaResumo" class="chip">0 pessoas</span>
+            </div>
+            <div id="listaAgrupada" class="group-list"></div>
+          </article>
+          <article class="card">
+            <div class="card-head">
+              <h3>Vencem nos próximos 30 dias</h3>
+              <span class="chip">prioridade</span>
+            </div>
+            <div id="listaVencendoDias" class="alert-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="consultaPanel" class="panel-view hidden">
+        <div class="title-row"><div><span class="eyebrow">Consulta interna</span><h2>Ficha do colaborador</h2></div></div>
+        <div class="card">
+          <div class="search-row">
+            <input id="consultaBusca" type="search" placeholder="Digite nome ou matrícula" />
+            <button id="btnConsultaBuscar" class="btn">Buscar</button>
+          </div>
+          <div id="consultaResultado" class="result-box empty">Pesquise um colaborador.</div>
+        </div>
+      </section>
+
+      <section id="qrPanel" class="panel-view hidden">
+        <div class="title-row"><div><span class="eyebrow">QR Code</span><h2>Gerar consulta somente leitura</h2></div></div>
+        <div class="grid-two">
+          <div class="card">
+            <label><span>Pesquisar colaborador</span><input id="qrBusca" type="search" placeholder="Nome, matrícula ou setor" /></label>
+            <select id="qrColaborador" size="10" class="select-list"></select>
+            <button id="btnGerarQr" class="btn full">Gerar QR Code</button>
+          </div>
+          <div class="card qr-card">
+            <h3 id="qrNome">Selecione um colaborador</h3>
+            <p id="qrMeta">O link terá token aleatório, não matrícula.</p>
+            <div id="qrcode" class="qrcode"></div>
+            <div id="qrLink" class="copy-box"></div>
+            <button id="btnCopiarQr" class="btn secondary full">Copiar link</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="atualizarPanel" class="panel-view hidden">
+        <div class="title-row"><div><span class="eyebrow">Reciclagem / lançamento</span><h2>Atualizar treinamento para várias pessoas</h2></div></div>
+        <div class="grid-two">
+          <div class="card">
+            <label><span>Pesquisar pessoas</span><input id="updBusca" type="search" placeholder="Nome, matrícula ou setor" /></label>
+            <div class="row-mini">
+              <button id="btnSelecionarTodosVisiveis" class="btn secondary">Selecionar visíveis</button>
+              <button id="btnLimparSelecao" class="btn secondary">Limpar seleção</button>
+            </div>
+            <div id="updListaPessoas" class="check-list"></div>
+          </div>
+          <div class="card">
+            <h3>Dados do treinamento</h3>
+            <label><span>Treinamento</span><select id="updTreinamento"></select></label>
+            <label><span>Data realizada</span><input id="updData" type="date" /></label>
+            <label><span>Validade até</span><input id="updValidade" type="date" /></label>
+            <label><span>Observação/evidência</span><textarea id="updObs" rows="4" placeholder="Lista de presença, certificado, instrutor..."></textarea></label>
+            <div class="selected-count"><strong id="updQtdSelecionados">0</strong> colaborador(es) selecionado(s)</div>
+            <button id="btnSalvarAtualizacao" class="btn full">Salvar reciclagem</button>
+            <button id="btnMarcarObrigatorio" class="btn secondary full">Aplicar como obrigatório sem data</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="basePanel" class="panel-view hidden">
+        <div class="title-row"><div><span class="eyebrow">Base de dados</span><h2>Colaboradores e treinamentos</h2></div></div>
+        <div class="grid-two">
+          <div class="card">
+            <div class="card-head"><h3>Colaborador</h3><button id="btnNovoColab" class="btn secondary">Novo</button></div>
+            <input id="colabId" type="hidden" />
+            <label><span>Matrícula</span><input id="colabMatricula" type="text" /></label>
+            <label><span>Nome</span><input id="colabNome" type="text" /></label>
+            <label><span>Setor</span><input id="colabSetor" type="text" /></label>
+            <label><span>Função</span><input id="colabFuncao" type="text" /></label>
+            <label class="inline"><input id="colabAtivo" type="checkbox" checked /> <span>Ativo</span></label>
+            <div class="row-mini">
+              <button id="btnSalvarColab" class="btn">Salvar colaborador</button>
+              <button id="btnExcluirColab" class="btn danger">Excluir</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Novo treinamento</h3>
+            <label><span>Nome</span><input id="treNome" type="text" /></label>
+            <label><span>Periodicidade em dias</span><input id="treDias" type="number" min="0" placeholder="365" /></label>
+            <label><span>Setores aplicáveis</span><input id="treSetores" type="text" placeholder="Envase, Manutenção ou TODOS" /></label>
+            <label class="inline"><input id="treValidadeDireta" type="checkbox" /> <span>Data lançada já é validade direta</span></label>
+            <button id="btnSalvarTreinamento" class="btn full">Cadastrar treinamento</button>
+          </div>
+        </div>
+        <div class="card mt">
+          <div class="card-head"><h3>Lista de colaboradores</h3><input id="baseBusca" type="search" placeholder="Buscar" /></div>
+          <div class="table-wrap"><table><thead><tr><th>Matrícula</th><th>Nome</th><th>Setor</th><th>Função</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodyColabs"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="agendaPanel" class="panel-view hidden">
+        <div class="title-row"><div><span class="eyebrow">Agenda</span><h2>Agendamentos</h2></div></div>
+        <div class="grid-two">
+          <div class="card">
+            <label><span>Treinamento/reunião</span><select id="agendaTreinamento"></select></label>
+            <label><span>Data e hora</span><input id="agendaData" type="datetime-local" /></label>
+            <label><span>Setor/público</span><input id="agendaSetor" type="text" /></label>
+            <label><span>Local</span><input id="agendaLocal" type="text" /></label>
+            <label><span>Responsável</span><input id="agendaResp" type="text" /></label>
+            <button id="btnSalvarAgenda" class="btn full">Salvar agendamento</button>
+          </div>
+          <div class="card"><h3>Próximos</h3><div id="agendaLista" class="alert-list"></div></div>
+        </div>
+      </section>
+
+      <section id="acessosPanel" class="panel-view hidden">
+        <div class="title-row"><div><span class="eyebrow">Gerência</span><h2>Acessos do sistema</h2></div></div>
+        <div class="card">
+          <p class="warning">Por segurança, a senha não é criada no GitHub Pages. Crie o usuário em Authentication &gt; Users no Supabase e vincule o UID abaixo.</p>
+          <div class="form-grid">
+            <label><span>Auth User ID</span><input id="accUid" type="text" placeholder="UUID do usuário no Supabase Auth" /></label>
+            <label><span>E-mail / usuário</span><input id="accUsuario" type="email" /></label>
+            <label><span>Nome</span><input id="accNome" type="text" /></label>
+            <label><span>Perfil</span><select id="accPerfil"><option value="tecnico">Técnico</option><option value="gerencia">Gerência</option></select></label>
+          </div>
+          <button id="btnSalvarAcesso" class="btn">Salvar acesso</button>
+        </div>
+        <div class="card mt"><h3>Usuários cadastrados</h3><div id="listaAcessos" class="alert-list"></div></div>
+      </section>
+
+      <section id="auditoriaPanel" class="panel-view hidden">
+        <div class="title-row"><div><span class="eyebrow">Rastreabilidade</span><h2>Auditoria</h2></div></div>
+        <div class="card"><div id="auditoriaLista" class="alert-list"></div></div>
+      </section>
+    </main>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+</body>
+</html>
