@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ADM | Sistema de Treinamentos</title>
-  <link rel="stylesheet" href="style.css?v=4" />
+ <link rel="stylesheet" href="style.css?v=6" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script defer src="app.js?v=4"></script>
+ <script defer src="app.js?v=6"></script>
 </head>
 <body>
   <div id="loading" class="loading">Carregando sistema...</div>
@@ -99,7 +99,57 @@
           <div class="kpi percent"><span>Aderência geral</span><strong id="kpiAderenciaGeral">0%</strong><small>site inteiro</small></div>
           <div class="kpi percent"><span>Aderência no filtro</span><strong id="kpiAderenciaArea">0%</strong><small>setor/treinamento selecionado</small></div>
         </div>
+<div class="card quick-dashboard">
+  <div class="card-head">
+    <h3>Filtros rápidos de cobrança</h3>
+    <span class="chip">operacional</span>
+  </div>
 
+  <div class="quick-filter-row">
+    <button class="quick-filter active" data-status="vencido">
+      <span>Vencidos</span>
+      <strong id="qtdQuickVencidos">0</strong>
+    </button>
+
+    <button class="quick-filter" data-status="prazo30">
+      <span>Até 30 dias</span>
+      <strong id="qtdQuick30">0</strong>
+    </button>
+
+    <button class="quick-filter" data-status="prazo60">
+      <span>31 a 60 dias</span>
+      <strong id="qtdQuick60">0</strong>
+    </button>
+
+    <button class="quick-filter" data-status="prazo90">
+      <span>61 a 90 dias</span>
+      <strong id="qtdQuick90">0</strong>
+    </button>
+
+    <button class="quick-filter" data-status="devendo">
+      <span>Devendo</span>
+      <strong id="qtdQuickDevendo">0</strong>
+    </button>
+  </div>
+</div>
+
+<div class="grid-two mt dashboard-extra">
+  <article class="card">
+    <div class="card-head">
+      <h3>Dashboard de vencimentos</h3>
+      <span class="chip">30 / 60 / 90</span>
+    </div>
+    <div id="dashboardVisual" class="dash-bars"></div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <h3>Resumo para cobrança da área</h3>
+      <span class="chip">ação</span>
+    </div>
+    <div id="dashboardCobranca" class="charge-box"></div>
+  </article>
+</div>
         <div class="grid-main">
           <article class="card">
             <div class="card-head">
