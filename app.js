@@ -59,10 +59,10 @@ function bindEvents(){
   $("loginForm").addEventListener("submit", login);
   $("btnSair").addEventListener("click", () => logout());
   document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => abrirPainel(btn.dataset.view)));
-document.querySelectorAll("[data-status]").forEach(btn => btn.addEventListener("click", () => {
-  statusAtivo = btn.dataset.status;
-  renderDashboard();
-}));
+  document.querySelectorAll("[data-status]").forEach(btn => btn.addEventListener("click", () => {
+    statusAtivo = btn.dataset.status;
+    renderDashboard();
+  }));
   ["dashFiltroTexto","dashFiltroSetor","dashFiltroTreinamento"].forEach(id => $(id).addEventListener("input", renderDashboard));
   $("btnLimparFiltros").addEventListener("click", () => { $("dashFiltroTexto").value=""; $("dashFiltroSetor").value=""; $("dashFiltroTreinamento").value=""; renderDashboard(); });
   $("btnReload").addEventListener("click", async () => { await loadAll(); renderAll(); toast("Dados atualizados."); });
@@ -235,6 +235,30 @@ function linhasFiltradas(){
   });
 }
 
+function linhasPorFaixaPrazo(linhas, faixa){
+  const base = linhas.filter(isAplicavel);
+  if(faixa === "vencido") return base.filter(l => l.status === "vencido");
+  if(faixa === "30") return base.filter(l => l.faixa === "30");
+  if(faixa === "60") return base.filter(l => l.faixa === "60");
+  if(faixa === "90") return base.filter(l => l.faixa === "90");
+  return base;
+}
+
+function qtdPessoasUnicas(linhas){
+  return new Set(linhas.map(l => l.colaborador.id)).size;
+}
+
+function renderBotaoTexto(id, valor){
+  const el = $(id);
+  if(el) el.textContent = valor;
+}
+
+function setStatusDashboard(status){
+  statusAtivo = status;
+  renderDashboard();
+}
+window.setStatusDashboard = setStatusDashboard;
+
 function agruparPorColaborador(linhas, status){
   const map = new Map();
   linhas.forEach(l => {
@@ -276,17 +300,43 @@ function renderDashboard(){
   if($("kpiAderenciaGeral")) $("kpiAderenciaGeral").textContent = pct(valGeral.length, aplGeral.length);
   if($("kpiAderenciaArea")) $("kpiAderenciaArea").textContent = pct(valFiltro.length, aplFiltro.length);
 
-  document.querySelectorAll(".kpi[data-status]").forEach(k => k.classList.toggle("active", k.dataset.status === statusAtivo));
+  const linhasVencidas = linhasPorFaixaPrazo(linhas, "vencido");
+  const linhas30 = linhasPorFaixaPrazo(linhas, "30");
+  const linhas60 = linhasPorFaixaPrazo(linhas, "60");
+  const linhas90 = linhasPorFaixaPrazo(linhas, "90");
+
+  renderBotaoTexto("qtdQuickVencidos", qtdPessoasUnicas(linhasVencidas));
+  renderBotaoTexto("qtdQuick30", qtdPessoasUnicas(linhas30));
+  renderBotaoTexto("qtdQuick60", qtdPessoasUnicas(linhas60));
+  renderBotaoTexto("qtdQuick90", qtdPessoasUnicas(linhas90));
+  renderBotaoTexto("qtdQuickDevendo", gDevendo.length);
+
+  document.querySelectorAll("[data-status]").forEach(k => k.classList.toggle("active", k.dataset.status === statusAtivo));
+
   let grupos;
-  if(statusAtivo === "vencido") grupos = gVencido;
-  else if(statusAtivo === "vencendo") grupos = gVencendo;
+  if(statusAtivo === "vencido") grupos = agruparPorColaborador(linhasVencidas, "todos");
+  else if(statusAtivo === "vencendo" || statusAtivo === "prazo30") grupos = agruparPorColaborador(linhas30, "todos");
+  else if(statusAtivo === "prazo60") grupos = agruparPorColaborador(linhas60, "todos");
+  else if(statusAtivo === "prazo90") grupos = agruparPorColaborador(linhas90, "todos");
   else if(statusAtivo === "devendo") grupos = gDevendo;
   else if(statusAtivo === "ok") grupos = ok.map(c => ({colaborador:c, itens:linhas.filter(l=>l.colaborador.id===c.id && isValido(l))}));
   else grupos = agruparPorColaborador(linhas,"todos");
-  const titulos = {vencido:"Colaboradores com treinamentos vencidos", vencendo:"Colaboradores com treinamentos vencendo em até 30 dias", devendo:"Colaboradores devendo treinamentos", ok:"Colaboradores sem pendência crítica", todos:"Todos os colaboradores"};
+
+  const titulos = {
+    vencido:"Colaboradores com treinamentos vencidos",
+    vencendo:"Colaboradores com treinamentos vencendo em até 30 dias",
+    prazo30:"Colaboradores com treinamentos vencendo em até 30 dias",
+    prazo60:"Colaboradores com treinamentos vencendo de 31 a 60 dias",
+    prazo90:"Colaboradores com treinamentos vencendo de 61 a 90 dias",
+    devendo:"Colaboradores devendo treinamentos",
+    ok:"Colaboradores sem pendência crítica",
+    todos:"Todos os colaboradores"
+  };
   $("listaTitulo").textContent = titulos[statusAtivo] || titulos.vencido;
   $("listaResumo").textContent = `${grupos.length} pessoa(s)`;
   $("listaAgrupada").innerHTML = grupos.map(renderGrupo).join("") || `<div class="empty">Nenhum colaborador encontrado para esse filtro.</div>`;
+
+  renderDashboardVisual(linhas);
   renderVencendoDias(linhas);
   renderAderenciaTreinamento(linhas);
   renderAderenciaSetor(linhas);
@@ -312,6 +362,47 @@ function renderGrupo(g){
   </div>`;
 }
 window.toggleDetalhe = (id) => $(id)?.classList.toggle("open");
+
+function renderDashboardVisual(linhas){
+  const vencidos = linhasPorFaixaPrazo(linhas, "vencido");
+  const dias30 = linhasPorFaixaPrazo(linhas, "30");
+  const dias60 = linhasPorFaixaPrazo(linhas, "60");
+  const dias90 = linhasPorFaixaPrazo(linhas, "90");
+
+  const dados = [
+    { label:"Vencidos", status:"vencido", qtd:qtdPessoasUnicas(vencidos), classe:"danger" },
+    { label:"Até 30 dias", status:"prazo30", qtd:qtdPessoasUnicas(dias30), classe:"warn" },
+    { label:"31 a 60 dias", status:"prazo60", qtd:qtdPessoasUnicas(dias60), classe:"blue" },
+    { label:"61 a 90 dias", status:"prazo90", qtd:qtdPessoasUnicas(dias90), classe:"green" }
+  ];
+
+  const maior = Math.max(...dados.map(d => d.qtd), 1);
+  const dash = $("dashboardVisual");
+  if(dash){
+    dash.innerHTML = dados.map(d => `
+      <button class="dash-bar ${d.classe}" onclick="setStatusDashboard('${d.status}')">
+        <div class="dash-bar-top">
+          <strong>${d.label}</strong>
+          <span>${d.qtd} pessoa(s)</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(5, Math.round((d.qtd / maior) * 100))}%"></div></div>
+      </button>
+    `).join("");
+  }
+
+  const setor = $("dashFiltroSetor")?.value || "todas as áreas";
+  const treinamento = $("dashFiltroTreinamento")?.selectedOptions?.[0]?.textContent || "todos os treinamentos";
+  const box = $("dashboardCobranca");
+  if(box){
+    box.innerHTML = `
+      <div class="charge-line danger"><strong>${qtdPessoasUnicas(vencidos)}</strong><span>pessoa(s) com treinamento vencido</span></div>
+      <div class="charge-line warn"><strong>${qtdPessoasUnicas(dias30)}</strong><span>pessoa(s) vencendo em até 30 dias</span></div>
+      <div class="charge-line blue"><strong>${qtdPessoasUnicas(dias60)}</strong><span>pessoa(s) vencendo de 31 a 60 dias</span></div>
+      <div class="charge-line green"><strong>${qtdPessoasUnicas(dias90)}</strong><span>pessoa(s) vencendo de 61 a 90 dias</span></div>
+      <p class="charge-note">Filtro atual: <b>${escapeHtml(setor)}</b> • <b>${escapeHtml(treinamento)}</b></p>
+    `;
+  }
+}
 
 function renderVencendoDias(linhas){
   const v = linhas
