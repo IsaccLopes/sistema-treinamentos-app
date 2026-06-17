@@ -336,23 +336,142 @@ async function copiarQr(){
 }
 
 async function showPublicQr(token){
-  $("loginView").classList.add("hidden"); $("appView").classList.add("hidden"); $("publicView").classList.remove("hidden");
+  $("loginView").classList.add("hidden");
+  $("appView").classList.add("hidden");
+  $("publicView").classList.remove("hidden");
+
   const { data, error } = await supabaseClient.rpc("consultar_treinamentos_qr", { p_token: token });
-  if(error){ console.error(error); $("publicContent").innerHTML = `<div class="empty">QR inválido ou acesso bloqueado.</div>`; return; }
+
+  if(error){
+    console.error(error);
+    $("publicContent").innerHTML = `<div class="empty">QR inválido ou acesso bloqueado.</div>`;
+    return;
+  }
+
   const payload = Array.isArray(data) ? data[0] : data;
-  if(!payload || !payload.colaborador){ $("publicContent").innerHTML = `<div class="empty">QR não encontrado.</div>`; return; }
+
+  if(!payload || !payload.colaborador){
+    $("publicContent").innerHTML = `<div class="empty">QR não encontrado.</div>`;
+    return;
+  }
+
   const c = payload.colaborador;
+
   $("publicTitle").textContent = c.nome;
   $("publicSubtitle").textContent = `${c.matricula || "sem matrícula"} • ${c.setor || "sem setor"}`;
+
   const linhas = (payload.treinamentos || []).map(x => {
-    const fakeT = {id:x.treinamento_id, nome:x.treinamento_nome, periodicidade_dias:x.periodicidade_dias};
-    const fakeR = {treinamento_id:x.treinamento_id, tipo:x.tipo, data_realizacao:x.data_realizacao, data_validade:x.data_validade};
-    const old = db; db = {colaboradores:[c], treinamentos:[fakeT], matriz:[fakeR], agenda:[], usuarios:[], auditoria:[]};
-    const s = calcStatus(fakeR); db = old;
-    const validade = x.data_validade || (x.data_realizacao && x.periodicidade_dias ? addDays(x.data_realizacao, x.periodicidade_dias) : "");
-    return {...x, ...s, validade};
+    const fakeT = {
+      id: x.treinamento_id,
+      nome: x.treinamento_nome,
+      periodicidade_dias: x.periodicidade_dias
+    };
+
+    const fakeR = {
+      treinamento_id: x.treinamento_id,
+      tipo: x.tipo,
+      data_realizacao: x.data_realizacao,
+      data_validade: x.data_validade
+    };
+
+    const old = db;
+    db = {
+      colaboradores: [c],
+      treinamentos: [fakeT],
+      matriz: [fakeR],
+      agenda: [],
+      usuarios: [],
+      auditoria: []
+    };
+
+    const s = calcStatus(fakeR);
+    db = old;
+
+    const validade = x.data_validade || (
+      x.data_realizacao && x.periodicidade_dias
+        ? addDays(x.data_realizacao, x.periodicidade_dias)
+        : ""
+    );
+
+    return { ...x, ...s, validade };
   });
-  $("publicContent").innerHTML = `<div class="alert-list">${linhas.map(l => `<div class="alert-item"><span class="status ${l.status}">${STATUS_LABEL[l.status] || l.status}</span><strong>${escapeHtml(l.treinamento_nome)}</strong><small>${l.detalhe || ""} • validade: ${brDate(l.validade)}</small></div>`).join("") || `<div class="empty">Sem treinamentos vinculados.</div>`}</div>`;
+
+  // QR do campo: mostra só o que interessa.
+  // Não mostra "Não se aplica", afastado, solicitado ou pendente.
+  const visiveis = linhas.filter(l =>
+    ["em_dia", "vencendo", "vencido", "devendo"].includes(l.status)
+  );
+
+  const pendencias = visiveis
+    .filter(l => ["vencido", "devendo"].includes(l.status))
+    .sort((a, b) => (a.dias ?? 9999) - (b.dias ?? 9999));
+
+  const emDia = visiveis
+    .filter(l => ["em_dia", "vencendo"].includes(l.status))
+    .sort((a, b) => a.treinamento_nome.localeCompare(b.treinamento_nome));
+
+  const total = visiveis.length;
+  const totalEmDia = emDia.length;
+  const totalPendencias = pendencias.length;
+
+  const renderLinhaPublica = (l) => {
+    const atrasado = ["vencido", "devendo"].includes(l.status);
+    const classe = atrasado ? "vencido" : "em_dia";
+    const rotulo = atrasado ? "Atrasado" : "Em dia";
+
+    let detalhe = "";
+
+    if(l.status === "devendo"){
+      detalhe = "Sem registro de realização/validade.";
+    }else if(l.status === "vencido"){
+      detalhe = `${l.detalhe || "Treinamento vencido."} • validade: ${brDate(l.validade)}`;
+    }else if(l.status === "vencendo"){
+      detalhe = `Ainda válido • ${l.detalhe || ""} • validade: ${brDate(l.validade)}`;
+    }else{
+      detalhe = `Válido até ${brDate(l.validade)}`;
+    }
+
+    return `
+      <div class="alert-item public-training-card ${classe}">
+        <span class="status ${classe}">${rotulo}</span>
+        <strong>${escapeHtml(l.treinamento_nome)}</strong>
+        <small>${escapeHtml(detalhe)}</small>
+      </div>
+    `;
+  };
+
+  $("publicContent").innerHTML = `
+    <div class="qr-summary">
+      <div>
+        <span>Em dia</span>
+        <strong>${totalEmDia}</strong>
+      </div>
+      <div class="${totalPendencias > 0 ? "danger" : ""}">
+        <span>Atrasados</span>
+        <strong>${totalPendencias}</strong>
+      </div>
+      <div>
+        <span>Total exibido</span>
+        <strong>${total}</strong>
+      </div>
+    </div>
+
+    ${pendencias.length ? `
+      <div class="qr-section-title danger">Atenção: treinamentos atrasados</div>
+      <div class="alert-list public-list">
+        ${pendencias.map(renderLinhaPublica).join("")}
+      </div>
+    ` : `
+      <div class="qr-ok-banner">Nenhum treinamento atrasado encontrado.</div>
+    `}
+
+    ${emDia.length ? `
+      <div class="qr-section-title">Treinamentos em dia</div>
+      <div class="alert-list public-list">
+        ${emDia.map(renderLinhaPublica).join("")}
+      </div>
+    ` : ""}
+  `;
 }
 
 function renderUpdatePeople(){
