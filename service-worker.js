@@ -1,4 +1,4 @@
-const CACHE_NAME = "treinamentos-adm-v1";
+const CACHE_NAME = "treinamentos-adm-v2";
 
 const APP_SHELL = [
   "./",
@@ -33,7 +33,7 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
 
-  // Não cacheia Supabase aqui para não misturar dados protegidos.
+  // Não cacheia Supabase para não misturar dados protegidos.
   if (url.hostname.includes("supabase.co")) {
     return;
   }
