@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ADM | Sistema de Treinamentos</title>
-  <link rel="stylesheet" href="style.css?v=11" />
+  <link rel="stylesheet" href="style.css?v=13" />
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0f2b57" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -12,7 +12,7 @@
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script defer src="app.js?v=12"></script>
+  <script defer src="app.js?v=13"></script>
 </head>
 <body>
   <div id="loading" class="loading">Carregando sistema...</div>
@@ -70,7 +70,7 @@
     <nav class="tabs">
       <button class="tab active" data-view="dashboardPanel">Painel</button>
       <button class="tab" data-view="consultaPanel">Consulta</button>
-      <button class="tab staff-only" data-view="qrPanel">QR Code</button>
+      <button class="tab gestor-allowed" data-view="qrPanel">QR Code</button>
       <button class="tab staff-only" data-view="atualizarPanel">Atualizar</button>
       <button class="tab staff-only" data-view="basePanel">Base</button>
       <button class="tab staff-only" data-view="agendaPanel">Agenda</button>
@@ -116,6 +116,22 @@
               <span class="chip">maiores pendências</span>
             </div>
             <div id="gestorTreinamentosCriticos" class="adherence-list"></div>
+          </article>
+
+          <article class="card gestor-action-card">
+            <div class="card-head">
+              <h3>KPI por semestre</h3>
+              <span class="chip">vencimentos</span>
+            </div>
+            <div id="gestorKpiSemestre" class="gestor-chart-columns"></div>
+          </article>
+
+          <article class="card gestor-action-card gestor-wide-card">
+            <div class="card-head">
+              <h3>Pendências por pessoa</h3>
+              <span class="chip">top críticos</span>
+            </div>
+            <div id="gestorKpiPessoa" class="gestor-chart-horizontal"></div>
           </article>
 
           <article class="card gestor-action-card">

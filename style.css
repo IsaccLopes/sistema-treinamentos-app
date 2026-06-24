@@ -125,3 +125,127 @@ body.is-gestor .gestor-action-card{min-height:0;}
   body.is-gestor .dashboard-extra, body.is-gestor .grid-main{grid-template-columns:1fr;}
 }
 @media(max-width:620px){.gestor-resumo-grid{grid-template-columns:1fr 1fr;}}
+
+
+/* ===== V5.3 - Gestor com QR Code e KPIs visuais ===== */
+body.is-gestor .tabs .gestor-allowed{
+  display:inline-flex !important;
+}
+body.is-gestor #qrPanel .title-row h2::after{
+  content:" da minha área";
+  color:var(--muted);
+  font-size:.95rem;
+  font-weight:850;
+}
+body.is-gestor #qrPanel .grid-two{
+  grid-template-columns:.9fr 1.1fr;
+}
+.gestor-wide-card{
+  grid-column:1 / -1;
+}
+.gestor-chart-columns{
+  min-height:190px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-around;
+  gap:12px;
+  padding:12px 6px 4px;
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:linear-gradient(180deg,#fff,#f8fbff);
+}
+.gestor-col{
+  flex:1;
+  min-width:76px;
+  border:0;
+  background:transparent;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+  cursor:pointer;
+  color:var(--blue);
+  font-weight:950;
+}
+.gestor-col-value{
+  min-width:38px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  background:#eef4ff;
+  color:var(--blue);
+  font-size:1rem;
+}
+.gestor-col-bar{
+  width:42px;
+  display:block;
+  border-radius:14px 14px 6px 6px;
+  background:linear-gradient(180deg,var(--green),var(--blue));
+  box-shadow:0 10px 20px rgba(15,35,66,.14);
+}
+.gestor-col:first-child .gestor-col-bar{
+  background:linear-gradient(180deg,#ef4444,#991b1b);
+}
+.gestor-col strong{
+  font-size:.82rem;
+  text-align:center;
+  line-height:1.15;
+}
+.gestor-col small{
+  color:var(--muted);
+  font-size:.7rem;
+}
+.gestor-chart-horizontal{
+  display:grid;
+  gap:10px;
+}
+.gestor-person-bar{
+  display:grid;
+  grid-template-columns: minmax(180px,1.2fr) 2fr 42px;
+  align-items:center;
+  gap:10px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:10px 12px;
+  background:#fff;
+}
+.gestor-person-info strong{
+  display:block;
+  color:var(--blue);
+  font-size:.92rem;
+}
+.gestor-person-info small{
+  display:block;
+  color:var(--muted);
+  font-weight:850;
+  font-size:.74rem;
+  margin-top:2px;
+}
+.gestor-person-track{
+  height:14px;
+  background:#eef3f8;
+  border-radius:999px;
+  overflow:hidden;
+}
+.gestor-person-track span{
+  display:block;
+  height:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg,#ef4444,#e5a000,#2d6cdf);
+}
+.gestor-person-bar b{
+  color:var(--blue);
+  font-size:1.05rem;
+  text-align:right;
+}
+@media(max-width:900px){
+  body.is-gestor #qrPanel .grid-two{grid-template-columns:1fr;}
+  .gestor-person-bar{grid-template-columns:1fr;}
+  .gestor-person-bar b{text-align:left;}
+}
+@media(max-width:620px){
+  .gestor-chart-columns{overflow:auto;justify-content:flex-start;}
+  .gestor-col{min-width:92px;}
+}

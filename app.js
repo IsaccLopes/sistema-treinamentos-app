@@ -55,6 +55,7 @@ function aplicarTelaPorPerfil(){
   document.body.classList.toggle("is-gestor", gestor);
   document.querySelectorAll(".manager-only").forEach(el => el.classList.toggle("hidden", !isGerencia()));
   document.querySelectorAll(".staff-only").forEach(el => el.classList.toggle("hidden", gestor));
+  document.querySelectorAll(".gestor-allowed").forEach(el => el.classList.remove("hidden"));
 
   const banner = $("gestorBanner");
   if(banner){
@@ -227,15 +228,17 @@ async function showApp(){
 }
 
 function abrirPainel(view){
-  if(isGestor() && !["dashboardPanel","consultaPanel"].includes(view)){
-    toast("Perfil gestor acessa somente Painel e Consulta da(s) própria(s) área(s).");
+  if(isGestor() && !["dashboardPanel","consultaPanel","qrPanel"].includes(view)){
+    toast("Perfil gestor acessa somente Painel, Consulta e QR Code da(s) própria(s) área(s).");
     view = "dashboardPanel";
   }
+  if(view === "qrPanel" && isGestor()){ toast("QR Code liberado somente para colaboradores da(s) sua(s) área(s)."); }
   if(view === "acessosPanel" && !isGerencia()){ toast("Apenas Gerência acessa essa tela."); return; }
   document.querySelectorAll(".panel-view").forEach(v => v.classList.add("hidden"));
   $(view).classList.remove("hidden");
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === view));
   if(view === "basePanel") renderBaseColabs();
+  if(view === "qrPanel") renderQrSelect();
   if(view === "auditoriaPanel") renderAuditoria();
   if(view === "acessosPanel") renderAcessos();
 }
@@ -523,6 +526,67 @@ function renderDashboardVisual(linhas){
   }
 }
 
+function semestreLabelData(data){
+  if(!data) return "Sem validade";
+  const d = new Date(`${String(data).slice(0,10)}T00:00:00`);
+  if(Number.isNaN(d.getTime())) return "Sem validade";
+  const sem = d.getMonth() < 6 ? "1º sem" : "2º sem";
+  return `${sem} ${d.getFullYear()}`;
+}
+
+function renderGestorGraficos(linhas){
+  if(!isGestor()) return;
+  const boxSemestre = $("gestorKpiSemestre");
+  const boxPessoa = $("gestorKpiPessoa");
+  const aplicaveis = linhas.filter(isAplicavel);
+  const pendencias = aplicaveis.filter(l => ["vencido","devendo","vencendo"].includes(l.status) || ["30","60","90"].includes(l.faixa));
+
+  if(boxSemestre){
+    const map = new Map();
+    const vencidos = aplicaveis.filter(l => l.status === "vencido");
+    map.set("Vencidos", qtdPessoasUnicas(vencidos));
+    aplicaveis.filter(l => l.status !== "vencido" && l.validade).forEach(l => {
+      const label = semestreLabelData(l.validade);
+      if(!map.has(label)) map.set(label, new Set());
+      map.get(label).add(l.colaborador.id);
+    });
+    const arr = [...map.entries()].map(([label, value]) => ({ label, valor: value instanceof Set ? value.size : value }))
+      .filter(x => x.label === "Vencidos" || x.valor > 0)
+      .slice(0, 6);
+    const maior = Math.max(...arr.map(x => x.valor), 1);
+    boxSemestre.innerHTML = arr.map(x => `
+      <button class="gestor-col" type="button" onclick="setStatusDashboard('${x.label === "Vencidos" ? "vencido" : "todos"}')">
+        <span class="gestor-col-value">${x.valor}</span>
+        <span class="gestor-col-bar" style="height:${Math.max(12, Math.round((x.valor/maior)*110))}px"></span>
+        <strong>${escapeHtml(x.label)}</strong>
+        <small>pessoa(s)</small>
+      </button>
+    `).join("") || `<div class="empty small-empty">Sem vencimentos para exibir.</div>`;
+  }
+
+  if(boxPessoa){
+    const map = new Map();
+    pendencias.forEach(l => {
+      const id = l.colaborador.id;
+      if(!map.has(id)) map.set(id, { colaborador:l.colaborador, vencidos:0, devendo:0, prox:0, total:0 });
+      const item = map.get(id);
+      item.total++;
+      if(l.status === "vencido") item.vencidos++;
+      else if(l.status === "devendo") item.devendo++;
+      else item.prox++;
+    });
+    const arr = [...map.values()].sort((a,b)=>b.total-a.total || b.vencidos-a.vencidos || a.colaborador.nome.localeCompare(b.colaborador.nome)).slice(0,10);
+    const maior = Math.max(...arr.map(x => x.total), 1);
+    boxPessoa.innerHTML = arr.map(x => `
+      <div class="gestor-person-bar">
+        <div class="gestor-person-info"><strong>${escapeHtml(x.colaborador.nome)}</strong><small>${escapeHtml(x.colaborador.setor || "")} • ${x.vencidos} vencido(s) • ${x.devendo} devendo • ${x.prox} próximos</small></div>
+        <div class="gestor-person-track"><span style="width:${Math.max(5, Math.round((x.total/maior)*100))}%"></span></div>
+        <b>${x.total}</b>
+      </div>
+    `).join("") || `<div class="empty small-empty">Sem pendências por pessoa.</div>`;
+  }
+}
+
 function renderGestorOverview(linhas, todasLinhas){
   if(!isGestor()) return;
   const boxResumo = $("gestorResumoRapido");
@@ -597,9 +661,11 @@ function renderGestorOverview(linhas, todasLinhas){
       <div class="charge-line warn"><strong>${qtdPessoasUnicas(dias30)}</strong><span>programar reciclagem nesta semana</span></div>
       <div class="charge-line blue"><strong>${qtdPessoasUnicas(dias60)}</strong><span>planejar agenda com antecedência</span></div>
       <div class="charge-line green"><strong>${qtdPessoasUnicas(dias90)}</strong><span>monitorar para não virar atraso</span></div>
-      <p class="charge-note">Perfil gestor é somente acompanhamento. Alterações devem ser solicitadas à Segurança do Trabalho.</p>
+      <p class="charge-note">Perfil gestor é somente acompanhamento. Ele pode consultar e gerar QR Code dos colaboradores da própria área, mas não altera treinamentos.</p>
     `;
   }
+
+  renderGestorGraficos(linhas);
 }
 
 function renderVencendoDias(linhas){
