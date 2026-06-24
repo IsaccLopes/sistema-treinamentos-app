@@ -27,6 +27,28 @@ const addDays = (date, days) => { const d = new Date(`${date}T00:00:00`); d.setD
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const escapeHtml = (v) => String(v ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
 
+function isGerencia(){ return perfil?.perfil === "gerencia"; }
+function isTecnico(){ return perfil?.perfil === "tecnico"; }
+function isGestor(){ return perfil?.perfil === "gestor"; }
+function canEdit(){ return isGerencia() || isTecnico(); }
+function areaGestor(){ return String(perfil?.area_responsavel || "").trim(); }
+function linhaPermitidaParaPerfil(l){ return !isGestor() || norm(l.colaborador?.setor) === norm(areaGestor()); }
+function colaboradoresVisiveis(){ return db.colaboradores.filter(c => !isGestor() || norm(c.setor) === norm(areaGestor())); }
+function roleLabel(){ return ({ gerencia:"Gerência", tecnico:"Técnico", gestor:"Gestor de área" }[perfil?.perfil] || perfil?.perfil || "perfil"); }
+function aplicarTelaPorPerfil(){
+  const gestor = isGestor();
+  document.querySelectorAll(".manager-only").forEach(el => el.classList.toggle("hidden", !isGerencia()));
+  document.querySelectorAll(".staff-only").forEach(el => el.classList.toggle("hidden", gestor));
+  const banner = $("gestorBanner");
+  if(banner){
+    banner.classList.toggle("hidden", !gestor);
+    if(gestor) banner.querySelector("span").textContent = `Você está visualizando somente a área: ${areaGestor() || "não definida"}.`;
+  }
+  if($("btnExportExcel")) $("btnExportExcel").textContent = gestor ? "Exportar minha área" : "Exportar Excel";
+  const title = document.querySelector("#dashboardPanel .title-row h2");
+  if(title) title.textContent = gestor ? `Painel do gestor - ${areaGestor() || "minha área"}` : "Painel resumido por colaborador";
+}
+
 window.addEventListener("DOMContentLoaded", init);
 
 async function init(){
@@ -120,7 +142,7 @@ async function logout(msg){
 async function loadPerfil(){
   const { data, error } = await supabaseClient
     .from("usuarios_app")
-    .select("id,auth_user_id,usuario,nome,perfil,ativo")
+    .select("id,auth_user_id,usuario,nome,perfil,ativo,area_responsavel")
     .eq("auth_user_id", session.user.id)
     .eq("ativo", true)
     .maybeSingle();
@@ -140,15 +162,16 @@ async function showApp(){
   $("publicView").classList.add("hidden");
   $("appView").classList.remove("hidden");
   $("userName").textContent = perfil.nome || perfil.usuario;
-  $("userRole").textContent = perfil.perfil === "gerencia" ? "Gerência" : "Técnico";
-  document.querySelectorAll(".manager-only").forEach(el => el.classList.toggle("hidden", perfil.perfil !== "gerencia"));
+  $("userRole").textContent = roleLabel();
+  aplicarTelaPorPerfil();
   await loadAll();
   hydrateSelects();
   renderAll();
 }
 
 function abrirPainel(view){
-  if(view === "acessosPanel" && perfil?.perfil !== "gerencia"){ toast("Apenas Gerência acessa essa tela."); return; }
+  if(isGestor() && !["dashboardPanel","consultaPanel"].includes(view)){ toast("Perfil gestor acessa somente Painel e Consulta da própria área."); return; }
+  if(view === "acessosPanel" && !isGerencia()){ toast("Apenas Gerência acessa essa tela."); return; }
   document.querySelectorAll(".panel-view").forEach(v => v.classList.add("hidden"));
   $(view).classList.remove("hidden");
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === view));
@@ -163,8 +186,8 @@ async function loadAll(){
     selectAll("treinamentos", "*"),
     selectAll("matriz_treinamentos", "*"),
     selectAll("agenda_treinamentos", "*"),
-    perfil?.perfil === "gerencia" ? selectAll("usuarios_app", "*") : Promise.resolve([]),
-    selectAll("auditoria_treinamentos", "*"),
+    isGerencia() ? selectAll("usuarios_app", "*") : Promise.resolve([]),
+    isGestor() ? Promise.resolve([]) : selectAll("auditoria_treinamentos", "*"),
     selectAll("historico_treinamentos", "*").catch(() => []),
     selectAll("grupos_treinamento", "*").catch(() => []),
     selectAll("grupos_treinamento_itens", "*").catch(() => [])
@@ -197,6 +220,7 @@ async function selectAll(table, columns="*"){
 function hydrateSelects(){
   const setores = [...new Set(db.colaboradores.map(c => c.setor).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   $("dashFiltroSetor").innerHTML = `<option value="">Todos</option>` + setores.map(s => `<option>${escapeHtml(s)}</option>`).join("");
+  if(isGestor()){ const area = areaGestor(); $("dashFiltroSetor").innerHTML = `<option value="${escapeHtml(area)}">${escapeHtml(area || "Minha área")}</option>`; $("dashFiltroSetor").value = area; $("dashFiltroSetor").disabled = true; } else { $("dashFiltroSetor").disabled = false; }
   const optsTre = `<option value="">Todos</option>` + db.treinamentos.filter(t => t.ativo !== false).sort((a,b)=>a.nome.localeCompare(b.nome)).map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.nome)}</option>`).join("");
   $("dashFiltroTreinamento").innerHTML = optsTre;
   $("updTreinamento").innerHTML = optsTre;
@@ -206,7 +230,7 @@ function hydrateSelects(){
   renderQrSelect(); renderUpdatePeople(); renderGrupoTreinamentosLista(); renderGruposTreinamento(); renderTreinamentosBase();
 }
 
-function renderAll(){ renderDashboard(); renderQrSelect(); renderUpdatePeople(); renderBaseColabs(); renderTreinamentosBase(); renderGrupoTreinamentosLista(); renderGruposTreinamento(); renderAgenda(); renderAuditoria(); renderAcessos(); }
+function renderAll(){ aplicarTelaPorPerfil(); renderDashboard(); renderQrSelect(); renderUpdatePeople(); renderBaseColabs(); renderTreinamentosBase(); renderGrupoTreinamentosLista(); renderGruposTreinamento(); renderAgenda(); renderAuditoria(); renderAcessos(); }
 
 function treinamentoById(id){ return db.treinamentos.find(t => t.id === id) || {}; }
 function colaboradorById(id){ return db.colaboradores.find(c => c.id === id) || {}; }
@@ -257,9 +281,10 @@ function linhasFiltradas(){
   const texto = norm($("dashFiltroTexto")?.value);
   const setor = $("dashFiltroSetor")?.value || "";
   const treinamento = $("dashFiltroTreinamento")?.value || "";
-  return linhasStatus().filter(l => {
+  return linhasStatus().filter(linhaPermitidaParaPerfil).filter(l => {
     const hay = `${l.colaborador.matricula} ${l.colaborador.nome} ${l.colaborador.setor}`.toLowerCase();
-    return (!texto || hay.includes(texto)) && (!setor || l.colaborador.setor === setor) && (!treinamento || l.treinamento.id === treinamento);
+    const setorObrigatorio = isGestor() ? areaGestor() : setor;
+    return (!texto || hay.includes(texto)) && (!setorObrigatorio || norm(l.colaborador.setor) === norm(setorObrigatorio)) && (!treinamento || l.treinamento.id === treinamento);
   });
 }
 
@@ -300,7 +325,7 @@ function agruparPorColaborador(linhas, status){
 }
 
 function pessoasSemPendencia(linhas){
-  const ativos = db.colaboradores.filter(c => c.ativo !== false);
+  const ativos = colaboradoresVisiveis().filter(c => c.ativo !== false);
   return ativos.filter(c => {
     const ls = linhas.filter(l => l.colaborador.id === c.id);
     return ls.length && !ls.some(l => ["vencido","vencendo","devendo"].includes(l.status));
@@ -309,7 +334,7 @@ function pessoasSemPendencia(linhas){
 
 function renderDashboard(){
   const linhas = linhasFiltradas();
-  const todasLinhas = linhasStatus();
+  const todasLinhas = linhasStatus().filter(linhaPermitidaParaPerfil);
   const gVencido = agruparPorColaborador(linhas,"vencido");
   const gVencendo = agruparPorColaborador(linhas,"vencendo");
   const gDevendo = agruparPorColaborador(linhas,"devendo");
@@ -324,7 +349,7 @@ function renderDashboard(){
   $("kpiVencendo").textContent = gVencendo.length;
   $("kpiDevendo").textContent = gDevendo.length;
   $("kpiOk").textContent = ok.length;
-  $("kpiColaboradores").textContent = db.colaboradores.filter(c => c.ativo !== false).length;
+  $("kpiColaboradores").textContent = colaboradoresVisiveis().filter(c => c.ativo !== false).length;
   if($("kpiAderenciaGeral")) $("kpiAderenciaGeral").textContent = pct(valGeral.length, aplGeral.length);
   if($("kpiAderenciaArea")) $("kpiAderenciaArea").textContent = pct(valFiltro.length, aplFiltro.length);
 
@@ -377,7 +402,7 @@ function renderGrupo(g){
   const detalhes = g.itens.sort((a,b)=>(a.dias??9999)-(b.dias??9999)).map(i => `
     <div class="detail-row">
       <span><strong>${escapeHtml(i.treinamento.nome)}</strong><br><small>${i.detalhe || ""} • validade: ${brDate(i.validade)} • ${tipoLancamentoLabel(i.row.tipo_lancamento)}</small></span>
-      <span class="detail-actions"><span class="status ${i.status}">${STATUS_LABEL[i.status] || i.status}</span><button class="btn secondary mini" onclick="abrirEditarVinculo('${escapeHtml(i.colaborador.id)}','${escapeHtml(i.treinamento.id)}')">Editar</button></span>
+      <span class="detail-actions"><span class="status ${i.status}">${STATUS_LABEL[i.status] || i.status}</span>${canEdit() ? `<button class="btn secondary mini" onclick="abrirEditarVinculo('${escapeHtml(i.colaborador.id)}','${escapeHtml(i.treinamento.id)}')">Editar</button>` : ""}</span>
     </div>`).join("");
   const id = `det-${escapeHtml(c.id).replace(/[^a-zA-Z0-9]/g,"")}`;
   return `<div class="group-item">
@@ -495,7 +520,7 @@ function renderAderenciaSetor(linhas){
 function consultaInterna(){
   const q = norm($("consultaBusca").value);
   if(!q){ toast("Digite nome ou matrícula."); return; }
-  const c = db.colaboradores.find(c => norm(c.matricula) === q || norm(c.nome).includes(q));
+  const c = colaboradoresVisiveis().find(c => norm(c.matricula) === q || norm(c.nome).includes(q));
   if(!c){ $("consultaResultado").innerHTML = `<div class="empty">Colaborador não encontrado.</div>`; return; }
   renderFicha(c, $("consultaResultado"));
 }
@@ -514,13 +539,13 @@ function renderFicha(c, target){
     return `<details class="history-box"><summary>Histórico (${hs.length})</summary>${hs.map(h => `<div class="history-row"><strong>${escapeHtml(tipoLancamentoLabel(h.tipo_lancamento))} • ${escapeHtml(h.acao || "lançamento")}</strong><small>${new Date(h.created_at).toLocaleString("pt-BR")} • ${escapeHtml(h.usuario || "")} • realizado: ${brDate(h.data_realizacao)} • validade: ${brDate(h.data_validade)}</small>${h.anexo_url ? `<button class="btn secondary mini" onclick="abrirAnexo('${escapeHtml(h.anexo_url)}')">Ver anexo histórico</button>` : ""}</div>`).join("")}</details>`;
   };
   target.innerHTML = `<div class="profile-head"><h3>${escapeHtml(c.nome)}</h3><p>${escapeHtml(c.matricula || "sem matrícula")} • ${escapeHtml(c.setor || "sem setor")} • ${escapeHtml(c.funcao || "")} • Grupo: ${escapeHtml(grupoNome(c.grupo_treinamento_id))}</p></div>
-    <div class="alert-list">${linhas.map(l => `<div class="alert-item"><span class="status ${l.status}">${STATUS_LABEL[l.status] || l.status}</span><strong>${escapeHtml(l.treinamento.nome)}</strong><small>${l.detalhe || ""} • realizado: ${brDate(l.row.data_realizacao)} • validade: ${brDate(l.validade)} • ${tipoLancamentoLabel(l.row.tipo_lancamento)} • alterado por: ${escapeHtml(l.row.atualizado_por || "-")}</small><div class="row-mini"><button class="btn secondary mini" onclick="abrirEditarVinculo('${escapeHtml(l.colaborador.id)}','${escapeHtml(l.treinamento.id)}')">Editar vínculo</button>${renderAnexo(l)}</div>${renderHistorico(l)}</div>`).join("") || `<div class="empty">Sem treinamentos vinculados.</div>`}</div>`;
+    <div class="alert-list">${linhas.map(l => `<div class="alert-item"><span class="status ${l.status}">${STATUS_LABEL[l.status] || l.status}</span><strong>${escapeHtml(l.treinamento.nome)}</strong><small>${l.detalhe || ""} • realizado: ${brDate(l.row.data_realizacao)} • validade: ${brDate(l.validade)} • ${tipoLancamentoLabel(l.row.tipo_lancamento)} • alterado por: ${escapeHtml(l.row.atualizado_por || "-")}</small><div class="row-mini">${canEdit() ? `<button class="btn secondary mini" onclick="abrirEditarVinculo('${escapeHtml(l.colaborador.id)}','${escapeHtml(l.treinamento.id)}')">Editar vínculo</button>` : ""}${renderAnexo(l)}</div>${renderHistorico(l)}</div>`).join("") || `<div class="empty">Sem treinamentos vinculados.</div>`}</div>`;
 }
 
 function renderQrSelect(){
   const q = norm($("qrBusca")?.value);
   if(!$("qrColaborador")) return;
-  const opts = db.colaboradores.filter(c => c.ativo !== false).filter(c => !q || `${c.nome} ${c.matricula} ${c.setor}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,250);
+  const opts = colaboradoresVisiveis().filter(c => c.ativo !== false).filter(c => !q || `${c.nome} ${c.matricula} ${c.setor}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,250);
   $("qrColaborador").innerHTML = opts.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.matricula || "s/m")} - ${escapeHtml(c.nome)} | ${escapeHtml(c.setor || "")}</option>`).join("");
 }
 
@@ -721,7 +746,7 @@ function renderTreinamentosBase(){
 function renderBaseColabs(){
   if(!$("tbodyColabs")) return;
   const q = norm($("baseBusca").value);
-  const rows = db.colaboradores.filter(c => !q || `${c.matricula} ${c.nome} ${c.setor} ${c.funcao} ${grupoNome(c.grupo_treinamento_id)}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,500);
+  const rows = colaboradoresVisiveis().filter(c => !q || `${c.matricula} ${c.nome} ${c.setor} ${c.funcao} ${grupoNome(c.grupo_treinamento_id)}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,500);
   $("tbodyColabs").innerHTML = rows.map(c => `<tr><td>${escapeHtml(c.matricula||"")}</td><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.setor||"")}</td><td>${escapeHtml(c.funcao||"")}<br><small>Grupo: ${escapeHtml(grupoNome(c.grupo_treinamento_id))}</small></td><td>${c.ativo!==false?"Ativo":"Inativo"}</td><td><button class="btn secondary" onclick="editarColab('${escapeHtml(c.id)}')">Editar</button></td></tr>`).join("");
 }
 
@@ -834,15 +859,15 @@ function addSheet(wb, name, rows){
 function exportarExcel(){
   if(!window.XLSX){ toast("Biblioteca Excel ainda não carregou. Tente novamente."); return; }
   const wb = XLSX.utils.book_new();
-  const status = linhasStatus().map(l => ({
+  const status = linhasStatus().filter(linhaPermitidaParaPerfil).map(l => ({
     colaborador_id:l.colaborador.id, matricula:l.colaborador.matricula, colaborador:l.colaborador.nome, setor:l.colaborador.setor, funcao:l.colaborador.funcao,
     grupo_id:l.colaborador.grupo_treinamento_id || "", grupo:grupoNome(l.colaborador.grupo_treinamento_id), treinamento_id:l.treinamento.id, treinamento:l.treinamento.nome,
     periodicidade_dias:l.treinamento.periodicidade_dias, tipo:l.row.tipo, status:l.status, detalhe:l.detalhe || "", faixa:l.faixa || "", dias:l.dias ?? "",
     data_realizacao:l.row.data_realizacao || "", data_validade:l.validade || "", tipo_lancamento:l.row.tipo_lancamento || "", observacao:l.row.observacao || "",
     anexo_url:l.row.anexo_url || "", anexo_nome:l.row.anexo_nome || "", atualizado_por:l.row.atualizado_por || "", atualizado_em:l.row.atualizado_em || ""
   }));
-  addSheet(wb, "Resumo", [{ exportado_em:new Date().toLocaleString("pt-BR"), usuario:perfil?.usuario, colaboradores:db.colaboradores.length, treinamentos:db.treinamentos.length, registros_matriz:db.matriz.length, historico:db.historico.length, auditoria:db.auditoria.length }]);
-  addSheet(wb, "Colaboradores", db.colaboradores.map(c => ({...c, grupo_nome:grupoNome(c.grupo_treinamento_id)})));
+  addSheet(wb, "Resumo", [{ exportado_em:new Date().toLocaleString("pt-BR"), usuario:perfil?.usuario, perfil:perfil?.perfil, area: isGestor() ? areaGestor() : "Todas", colaboradores:colaboradoresVisiveis().length, treinamentos:db.treinamentos.length, registros_matriz:status.length, historico:db.historico.length, auditoria:db.auditoria.length }]);
+  addSheet(wb, "Colaboradores", colaboradoresVisiveis().map(c => ({...c, grupo_nome:grupoNome(c.grupo_treinamento_id)})));
   addSheet(wb, "Treinamentos", db.treinamentos);
   addSheet(wb, "Situacao atual", status);
   addSheet(wb, "Vencidos", status.filter(r => r.status === "vencido"));
@@ -850,9 +875,9 @@ function exportarExcel(){
   addSheet(wb, "60 dias", status.filter(r => r.faixa === "60"));
   addSheet(wb, "90 dias", status.filter(r => r.faixa === "90"));
   addSheet(wb, "Devendo", status.filter(r => r.status === "devendo"));
-  addSheet(wb, "Matriz raw", db.matriz);
-  addSheet(wb, "Historico", db.historico);
-  addSheet(wb, "Auditoria", db.auditoria);
+  addSheet(wb, "Matriz raw", db.matriz.filter(m => colaboradoresVisiveis().some(c => c.id === m.colaborador_id)));
+  addSheet(wb, "Historico", db.historico.filter(h => colaboradoresVisiveis().some(c => c.id === h.colaborador_id)));
+  if(!isGestor()) addSheet(wb, "Auditoria", db.auditoria);
   addSheet(wb, "Agenda", db.agenda);
   addSheet(wb, "Grupos", db.grupos);
   addSheet(wb, "Grupos itens", db.grupoItens);
@@ -899,6 +924,7 @@ function historicoDoVinculo(colaboradorId, treinamentoId){
 }
 
 window.abrirEditarVinculo = (colaboradorId, treinamentoId) => {
+  if(!canEdit()){ toast("Perfil gestor não altera treinamentos. Solicite ajuste à Segurança do Trabalho."); return; }
   const c = colaboradorById(colaboradorId); const t = treinamentoById(treinamentoId);
   const row = db.matriz.find(m => m.colaborador_id === colaboradorId && m.treinamento_id === treinamentoId) || { colaborador_id:colaboradorId, treinamento_id:treinamentoId, tipo:"em_branco" };
   $("modalColabId").value = colaboradorId;
@@ -951,17 +977,18 @@ function renderAgenda(){
 }
 
 async function salvarAcesso(){
-  if(perfil?.perfil !== "gerencia"){ toast("Apenas Gerência."); return; }
-  const row = { auth_user_id:$("accUid").value.trim() || null, usuario:$("accUsuario").value.trim(), nome:$("accNome").value.trim(), perfil:$("accPerfil").value, ativo:true };
+  if(!isGerencia()){ toast("Apenas Gerência."); return; }
+  const row = { auth_user_id:$("accUid").value.trim() || null, usuario:$("accUsuario").value.trim(), nome:$("accNome").value.trim(), perfil:$("accPerfil").value, area_responsavel:$("accAreaResponsavel")?.value.trim() || null, ativo:true };
   if(!row.usuario || !row.nome){ toast("Informe e-mail/usuário e nome."); return; }
+  if(row.perfil === "gestor" && !row.area_responsavel){ toast("Para perfil gestor, informe a área responsável exatamente como aparece no setor."); return; }
   const { error } = await supabaseClient.from("usuarios_app").upsert(row, { onConflict:"usuario" });
   if(error){ console.error(error); toast("Erro ao salvar acesso."); return; }
   await auditar("salvar_acesso", { usuario:row.usuario, perfil:row.perfil }); await loadAll(); renderAcessos(); toast("Acesso salvo. Lembre de criar/vincular o usuário no Supabase Auth.");
 }
 
 function renderAcessos(){
-  if(!$("listaAcessos") || perfil?.perfil !== "gerencia") return;
-  $("listaAcessos").innerHTML = db.usuarios.map(u => `<div class="alert-item"><span class="status solicitado">${escapeHtml(u.perfil)}</span><strong>${escapeHtml(u.nome || u.usuario)}</strong><small>${escapeHtml(u.usuario)} • Auth UID: ${escapeHtml(u.auth_user_id || "não vinculado")}</small></div>`).join("") || `<div class="empty">Nenhum usuário retornado.</div>`;
+  if(!$("listaAcessos") || !isGerencia()) return;
+  $("listaAcessos").innerHTML = db.usuarios.map(u => `<div class="alert-item"><span class="status solicitado">${escapeHtml(u.perfil)}</span><strong>${escapeHtml(u.nome || u.usuario)}</strong><small>${escapeHtml(u.usuario)} • Área: ${escapeHtml(u.area_responsavel || "-")} • Auth UID: ${escapeHtml(u.auth_user_id || "não vinculado")}</small></div>`).join("") || `<div class="empty">Nenhum usuário retornado.</div>`;
 }
 
 function renderAuditoria(){

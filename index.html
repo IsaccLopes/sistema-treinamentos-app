@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ADM | Sistema de Treinamentos</title>
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=11" />
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0f2b57" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -12,7 +12,7 @@
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script defer src="app.js?v=10"></script>
+  <script defer src="app.js?v=11"></script>
 </head>
 <body>
   <div id="loading" class="loading">Carregando sistema...</div>
@@ -70,12 +70,12 @@
     <nav class="tabs">
       <button class="tab active" data-view="dashboardPanel">Painel</button>
       <button class="tab" data-view="consultaPanel">Consulta</button>
-      <button class="tab" data-view="qrPanel">QR Code</button>
-      <button class="tab" data-view="atualizarPanel">Atualizar</button>
-      <button class="tab" data-view="basePanel">Base</button>
-      <button class="tab" data-view="agendaPanel">Agenda</button>
+      <button class="tab staff-only" data-view="qrPanel">QR Code</button>
+      <button class="tab staff-only" data-view="atualizarPanel">Atualizar</button>
+      <button class="tab staff-only" data-view="basePanel">Base</button>
+      <button class="tab staff-only" data-view="agendaPanel">Agenda</button>
       <button class="tab manager-only hidden" data-view="acessosPanel">Acessos</button>
-      <button class="tab" data-view="auditoriaPanel">Auditoria</button>
+      <button class="tab staff-only" data-view="auditoriaPanel">Auditoria</button>
     </nav>
 
     <main class="container">
@@ -86,6 +86,11 @@
             <h2>Painel resumido por colaborador</h2>
           </div>
           <div class="row-mini title-actions"><button id="btnReload" class="btn secondary">Atualizar dados</button><button id="btnExportExcel" class="btn">Exportar Excel</button></div>
+        </div>
+
+        <div id="gestorBanner" class="gestor-banner hidden">
+          <strong>Portal do Gestor</strong>
+          <span>Você está visualizando somente os colaboradores da sua área.</span>
         </div>
 
         <div class="filters card">
@@ -328,7 +333,8 @@
             <label><span>Auth User ID</span><input id="accUid" type="text" placeholder="UUID do usuário no Supabase Auth" /></label>
             <label><span>E-mail / usuário</span><input id="accUsuario" type="email" /></label>
             <label><span>Nome</span><input id="accNome" type="text" /></label>
-            <label><span>Perfil</span><select id="accPerfil"><option value="tecnico">Técnico</option><option value="gerencia">Gerência</option></select></label>
+            <label><span>Perfil</span><select id="accPerfil"><option value="tecnico">Técnico</option><option value="gerencia">Gerência</option><option value="gestor">Gestor de área</option></select></label>
+            <label><span>Área do gestor</span><input id="accAreaResponsavel" type="text" placeholder="Ex.: LABORATORIO, MANUTENÇÃO, ENVASE" /></label>
           </div>
           <button id="btnSalvarAcesso" class="btn">Salvar acesso</button>
         </div>

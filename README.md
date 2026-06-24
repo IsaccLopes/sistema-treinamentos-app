@@ -1,38 +1,45 @@
-# Sistema de Treinamentos ADM - V4 Gestão Completa
+# Sistema de Treinamentos ADM - V5 Portal do Gestor
 
-Versão pública sem dados reais no GitHub. Dados ficam no Supabase.
+Versão pública sem base de dados no GitHub. Os dados ficam protegidos no Supabase.
 
-## Novidades V4
+## Novidades da V5
 
-- Aba Atualizar mostra os nomes dos colaboradores selecionados.
-- Grupos de treinamentos: exemplo Gestão, Operação, Laboratório.
-- Aplicar grupo ao colaborador e marcar demais treinamentos como Não se aplica, mantendo histórico.
-- Editar periodicidade dos treinamentos já cadastrados.
-- Ver anexos ao abrir a ficha do colaborador.
-- Exportar Excel completo com colaboradores, treinamentos, situação atual, matriz, histórico, auditoria, agenda, grupos e usuários.
-- Lugar para adicionar treinamento novo continua na aba Base.
+- Perfil novo: `gestor`.
+- Gestor vê somente a própria área, definida em `usuarios_app.area_responsavel`.
+- Portal do gestor com painel, aderência, vencidos, 30/60/90 dias e consulta dos colaboradores da área.
+- Gestor não edita treinamentos, não acessa Base, Atualizar, QR Code, Agenda, Acessos nem Auditoria completa.
+- Exportação do gestor sai somente com dados da área dele.
 
-## Antes de usar
+## Arquivos para subir no GitHub
 
-Rode no Supabase SQL Editor:
+Substitua/suba na raiz:
 
-`supabase/06_grupos_exportacao_periodicidade.sql`
+- `index.html`
+- `style.css`
+- `app.js`
+- `README.md`
+- `manifest.json`
+- `service-worker.js`
+- `icon-192.png`
+- `icon-512.png`
 
-Se ainda não rodou a versão anterior, rode também:
+Não suba a pasta `supabase` no GitHub público se não quiser. Ela é só para pegar o SQL.
 
-`supabase/05_indicadores_anexos_historico.sql`
+## SQL obrigatório
 
-## No GitHub público
+Antes de testar o gestor, rode no Supabase:
 
-Suba apenas:
+`supabase/07_portal_gestor_area.sql`
 
-- index.html
-- style.css
-- app.js
-- README.md
-- manifest.json
-- service-worker.js
-- icon-192.png
-- icon-512.png
+## Como cadastrar gestor
 
-Não suba CSV, planilha nem data.js.
+1. Supabase > Authentication > Users > Add user.
+2. Copie o User UID.
+3. No sistema, aba Acessos, escolha perfil `Gestor de área` e informe a área exatamente igual ao setor da base.
+
+Exemplo de área:
+
+- `LABORATORIO`
+- `MANUTENÇÃO MECÂNICA`
+- `ENVASE`
+- `RECEBIMENTO`

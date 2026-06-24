@@ -25,3 +25,30 @@ button,input,select,textarea{font:inherit} button{cursor:pointer}.hidden{display
 
 /* ===== VERSÃO 4 - grupos, seleção visível, exportação e anexos ===== */
 .title-actions{margin:0}.selected-box{border:1px solid var(--line);background:#f8fafc;border-radius:16px;padding:12px;margin:10px 0}.empty-small{color:var(--muted);font-weight:850}.selected-title{font-weight:950;color:var(--blue);margin-bottom:8px}.selected-chips{display:flex;gap:8px;flex-wrap:wrap;max-height:160px;overflow:auto}.selected-chip{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;text-align:left;border:1px solid var(--line);background:#fff;color:var(--blue);border-radius:14px;padding:8px 10px}.selected-chip strong{font-size:.8rem}.selected-chip small{font-size:.7rem;color:var(--muted)}.selected-chip span{grid-row:1/3;grid-column:2;color:var(--red);font-weight:950}.training-check-list{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:16px;padding:10px;background:#f8fafc}.history-box{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}.history-box summary{cursor:pointer;font-weight:950;color:var(--blue)}.history-row{border:1px solid var(--line);border-radius:12px;background:#f8fafc;padding:9px;margin-top:8px}.history-row strong,.history-row small{display:block}.history-row small{color:var(--muted);margin-top:3px}.table-wrap .row-mini{margin:0}.file-link{display:inline-flex;align-items:center;gap:6px}.mini{white-space:nowrap}.alert-item details{font-size:.9rem}@media(max-width:700px){.selected-chips{max-height:220px}.title-actions{width:100%;display:grid;grid-template-columns:1fr}.title-actions .btn{width:100%}.training-check-list{max-height:300px}}
+
+/* V5 - Portal do Gestor por área */
+.gestor-banner{
+  margin: 12px 0 16px;
+  border: 1px solid #b8dc8a;
+  background: linear-gradient(135deg,#eefbe8,#ffffff);
+  border-radius: 18px;
+  padding: 14px 18px;
+  display:flex;
+  gap:10px;
+  align-items:center;
+  color: var(--blue);
+  box-shadow: 0 10px 22px rgba(15,35,66,.06);
+}
+.gestor-banner strong{
+  color:#2e790f;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  font-size:.78rem;
+}
+.gestor-banner span{
+  color: var(--muted);
+  font-weight:900;
+}
+@media(max-width:700px){
+  .gestor-banner{align-items:flex-start; flex-direction:column;}
+}
