@@ -52,3 +52,76 @@ button,input,select,textarea{font:inherit} button{cursor:pointer}.hidden{display
 @media(max-width:700px){
   .gestor-banner{align-items:flex-start; flex-direction:column;}
 }
+
+
+/* ===== V5.2 - Portal do Gestor somente acompanhamento ===== */
+body.is-gestor #btnExportExcel,
+body.is-gestor #dashboardFilters,
+body.is-gestor .staff-only,
+body.is-gestor .manager-only{
+  display:none !important;
+}
+body.is-gestor .container{max-width:1320px;}
+body.is-gestor .title-row{margin-bottom:12px;}
+body.is-gestor .kpi-grid-7{grid-template-columns:repeat(6,minmax(130px,1fr));}
+body.is-gestor .kpi{min-height:118px;padding:15px;}
+body.is-gestor .kpi strong{font-size:2rem;}
+body.is-gestor .quick-dashboard{margin-top:12px;margin-bottom:12px;}
+body.is-gestor .quick-filter-row{grid-template-columns:repeat(5,minmax(120px,1fr));}
+body.is-gestor .dashboard-extra{grid-template-columns:1fr 1fr;margin-bottom:12px;}
+body.is-gestor .grid-main{grid-template-columns:1.15fr .85fr;}
+body.is-gestor .adherence-list{max-height:360px;}
+.gestor-overview{
+  display:grid;
+  grid-template-columns:1.1fr .9fr;
+  gap:14px;
+  margin-bottom:14px;
+}
+.gestor-resumo-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+}
+.gestor-mini-card{
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:16px;
+  padding:13px;
+  box-shadow:0 8px 18px rgba(15,35,66,.04);
+}
+.gestor-mini-card span{
+  display:block;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  font-size:.7rem;
+  font-weight:950;
+}
+.gestor-mini-card strong{
+  display:block;
+  margin-top:5px;
+  font-size:1.85rem;
+  line-height:1;
+  color:var(--blue);
+}
+.gestor-mini-card small{
+  display:block;
+  margin-top:6px;
+  color:var(--muted);
+  font-weight:850;
+}
+.gestor-mini-card.danger strong{color:var(--red)}
+.gestor-mini-card.warn strong{color:#e5a000}
+.gestor-mini-card.blue strong{color:#2d6cdf}
+.gestor-mini-card.green strong{color:var(--green)}
+.gestor-mini-card.muted strong{color:#64748b}
+.gestor-mini-card.ok strong{color:var(--green)}
+.gestor-prioridades{display:grid;gap:8px;max-height:360px;overflow:auto;}
+body.is-gestor .gestor-action-card{min-height:0;}
+@media(max-width:1100px){
+  .gestor-overview{grid-template-columns:1fr;}
+  body.is-gestor .kpi-grid-7{grid-template-columns:repeat(2,1fr);}
+  body.is-gestor .quick-filter-row{grid-template-columns:repeat(2,1fr);}
+  body.is-gestor .dashboard-extra, body.is-gestor .grid-main{grid-template-columns:1fr;}
+}
+@media(max-width:620px){.gestor-resumo-grid{grid-template-columns:1fr 1fr;}}

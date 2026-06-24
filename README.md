@@ -52,3 +52,15 @@ Exemplo de área:
 - Exemplo: `LABORATORIO, RECEBIMENTO, MANUTENÇÃO ELÉTRICA`.
 - Gestor continua vendo somente Painel e Consulta, mas pode filtrar entre as áreas liberadas.
 - Rode `supabase/08_portal_gestor_multiareas.sql` no Supabase.
+
+
+## V5.2 - Correção Portal do Gestor
+
+- Gestor só vê Painel e Consulta.
+- Gestor não vê Base, Atualizar, QR Code, Acessos e Auditoria.
+- Gestor não exporta Excel.
+- Gestor não edita vínculo, colaborador ou treinamento.
+- Painel do gestor sem filtros, focado em acompanhamento por área.
+- Suporte a múltiplas áreas separadas por vírgula.
+- Comparação de áreas ignora maiúsculas/minúsculas e acentos.
+- Login trata duplicidade de cadastro por e-mail/UID, priorizando gerência > gestor > técnico.

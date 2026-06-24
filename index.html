@@ -12,7 +12,7 @@
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script defer src="app.js?v=11"></script>
+  <script defer src="app.js?v=12"></script>
 </head>
 <body>
   <div id="loading" class="loading">Carregando sistema...</div>
@@ -21,7 +21,7 @@
     <div class="login-card">
       <div class="adm-logo"><span class="leaf"></span><strong>ADM</strong></div>
       <h1>Sistema de Treinamentos</h1>
-      <p>Acesso restrito à Segurança do Trabalho, técnicos e gerência.</p>
+      <p>Acesso restrito a usuários autorizados.</p>
       <form id="loginForm" class="form-stack">
         <label>
           <span>E-mail</span>
@@ -93,7 +93,41 @@
           <span>Você está visualizando somente os colaboradores da sua área.</span>
         </div>
 
-        <div class="filters card">
+        <div id="gestorOverview" class="gestor-overview hidden">
+          <article class="card gestor-action-card">
+            <div class="card-head">
+              <h3>Visão rápida da área</h3>
+              <span class="chip">somente acompanhamento</span>
+            </div>
+            <div id="gestorResumoRapido" class="gestor-resumo-grid"></div>
+          </article>
+
+          <article class="card gestor-action-card">
+            <div class="card-head">
+              <h3>Prioridade para cobrar</h3>
+              <span class="chip">gestor</span>
+            </div>
+            <div id="gestorPrioridades" class="gestor-prioridades"></div>
+          </article>
+
+          <article class="card gestor-action-card">
+            <div class="card-head">
+              <h3>Treinamentos críticos</h3>
+              <span class="chip">maiores pendências</span>
+            </div>
+            <div id="gestorTreinamentosCriticos" class="adherence-list"></div>
+          </article>
+
+          <article class="card gestor-action-card">
+            <div class="card-head">
+              <h3>Próximas ações</h3>
+              <span class="chip">sem edição</span>
+            </div>
+            <div id="gestorPlanoAcao" class="charge-box"></div>
+          </article>
+        </div>
+
+        <div id="dashboardFilters" class="filters card">
           <label><span>Colaborador / matrícula</span><input id="dashFiltroTexto" type="search" placeholder="Buscar nome ou matrícula" /></label>
           <label><span>Setor</span><select id="dashFiltroSetor"><option value="">Todos</option></select></label>
           <label><span>Treinamento</span><select id="dashFiltroTreinamento"><option value="">Todos</option></select></label>

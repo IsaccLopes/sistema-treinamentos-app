@@ -19,7 +19,7 @@ let statusAtivo = "vencido";
 let selecionadosAtualizacao = new Set();
 
 const $ = (id) => document.getElementById(id);
-const norm = (v) => String(v || "").trim().toLowerCase();
+const norm = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const today = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
 const isoDate = (d) => d ? new Date(d).toISOString().slice(0,10) : "";
 const brDate = (d) => d ? new Date(`${String(d).slice(0,10)}T00:00:00`).toLocaleDateString("pt-BR") : "-";
@@ -39,6 +39,8 @@ function areasGestor(){
     .filter(Boolean);
 }
 function areaGestorLabel(){ return areasGestor().join(", ") || "não definida"; }
+function normalizeEmail(v){ return String(v || "").trim().toLowerCase(); }
+function perfilPrioridade(p){ return ({ gerencia:0, gestor:1, tecnico:2 }[p] ?? 9); }
 function setorPermitidoGestor(setor){
   if(!isGestor()) return true;
   const areas = areasGestor().map(norm);
@@ -50,16 +52,36 @@ function colaboradoresVisiveis(){ return db.colaboradores.filter(c => !isGestor(
 function roleLabel(){ return ({ gerencia:"Gerência", tecnico:"Técnico", gestor:"Gestor de área" }[perfil?.perfil] || perfil?.perfil || "perfil"); }
 function aplicarTelaPorPerfil(){
   const gestor = isGestor();
+  document.body.classList.toggle("is-gestor", gestor);
   document.querySelectorAll(".manager-only").forEach(el => el.classList.toggle("hidden", !isGerencia()));
   document.querySelectorAll(".staff-only").forEach(el => el.classList.toggle("hidden", gestor));
+
   const banner = $("gestorBanner");
   if(banner){
     banner.classList.toggle("hidden", !gestor);
     if(gestor) banner.querySelector("span").textContent = `Você está visualizando somente a(s) área(s): ${areaGestorLabel()}.`;
   }
-  if($("btnExportExcel")) $("btnExportExcel").textContent = gestor ? "Exportar minha área" : "Exportar Excel";
+
+  const gestorOverview = $("gestorOverview");
+  if(gestorOverview) gestorOverview.classList.toggle("hidden", !gestor);
+
+  const filters = $("dashboardFilters");
+  if(filters) filters.classList.toggle("hidden", gestor);
+
+  if(gestor){
+    if($("dashFiltroTexto")) $("dashFiltroTexto").value = "";
+    if($("dashFiltroSetor")) $("dashFiltroSetor").value = "";
+    if($("dashFiltroTreinamento")) $("dashFiltroTreinamento").value = "";
+  }
+
+  const exportBtn = $("btnExportExcel");
+  if(exportBtn) exportBtn.classList.toggle("hidden", gestor);
+
   const title = document.querySelector("#dashboardPanel .title-row h2");
   if(title) title.textContent = gestor ? `Painel do gestor - ${areaGestorLabel()}` : "Painel resumido por colaborador";
+
+  const aderenciaFiltroSmall = document.querySelector("#kpiAderenciaArea")?.parentElement?.querySelector("small");
+  if(aderenciaFiltroSmall) aderenciaFiltroSmall.textContent = gestor ? "minha(s) área(s)" : "setor/treinamento selecionado";
 }
 
 window.addEventListener("DOMContentLoaded", init);
@@ -153,14 +175,36 @@ async function logout(msg){
 }
 
 async function loadPerfil(){
+  const email = normalizeEmail(session?.user?.email);
+
   const { data, error } = await supabaseClient
     .from("usuarios_app")
-    .select("id,auth_user_id,usuario,nome,perfil,ativo,area_responsavel")
-    .eq("auth_user_id", session.user.id)
-    .eq("ativo", true)
-    .maybeSingle();
+    .select("id,auth_user_id,usuario,nome,perfil,ativo,area_responsavel,created_at,updated_at")
+    .or(`auth_user_id.eq.${session.user.id},usuario.ilike.${email}`)
+    .eq("ativo", true);
+
   if(error){ console.error(error); return false; }
-  perfil = data;
+
+  const rows = (data || []).filter(r => {
+    const sameUid = r.auth_user_id === session.user.id;
+    const sameEmail = normalizeEmail(r.usuario) === email;
+    return sameUid || sameEmail;
+  });
+
+  if(!rows.length){ perfil = null; return false; }
+
+  // Se existirem cadastros duplicados para o mesmo UID/e-mail, usa o mais restritivo/correto:
+  // gerência > gestor > técnico, dando preferência ao e-mail exato.
+  rows.sort((a,b) => {
+    const emailA = normalizeEmail(a.usuario) === email ? 0 : 1;
+    const emailB = normalizeEmail(b.usuario) === email ? 0 : 1;
+    if(emailA !== emailB) return emailA - emailB;
+    const p = perfilPrioridade(a.perfil) - perfilPrioridade(b.perfil);
+    if(p !== 0) return p;
+    return new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0);
+  });
+
+  perfil = rows[0];
   return !!perfil;
 }
 
@@ -183,7 +227,10 @@ async function showApp(){
 }
 
 function abrirPainel(view){
-  if(isGestor() && !["dashboardPanel","consultaPanel"].includes(view)){ toast("Perfil gestor acessa somente Painel e Consulta da própria área."); return; }
+  if(isGestor() && !["dashboardPanel","consultaPanel"].includes(view)){
+    toast("Perfil gestor acessa somente Painel e Consulta da(s) própria(s) área(s).");
+    view = "dashboardPanel";
+  }
   if(view === "acessosPanel" && !isGerencia()){ toast("Apenas Gerência acessa essa tela."); return; }
   document.querySelectorAll(".panel-view").forEach(v => v.classList.add("hidden"));
   $(view).classList.remove("hidden");
@@ -411,6 +458,7 @@ function renderDashboard(){
   renderVencendoDias(linhas);
   renderAderenciaTreinamento(linhas);
   renderAderenciaSetor(linhas);
+  renderGestorOverview(linhas, todasLinhas);
 }
 
 function renderGrupo(g){
@@ -471,6 +519,85 @@ function renderDashboardVisual(linhas){
       <div class="charge-line blue"><strong>${qtdPessoasUnicas(dias60)}</strong><span>pessoa(s) vencendo de 31 a 60 dias</span></div>
       <div class="charge-line green"><strong>${qtdPessoasUnicas(dias90)}</strong><span>pessoa(s) vencendo de 61 a 90 dias</span></div>
       <p class="charge-note">Filtro atual: <b>${escapeHtml(setor)}</b> • <b>${escapeHtml(treinamento)}</b></p>
+    `;
+  }
+}
+
+function renderGestorOverview(linhas, todasLinhas){
+  if(!isGestor()) return;
+  const boxResumo = $("gestorResumoRapido");
+  const boxPrioridades = $("gestorPrioridades");
+  const boxTreinos = $("gestorTreinamentosCriticos");
+  const boxPlano = $("gestorPlanoAcao");
+
+  const apl = linhas.filter(isAplicavel);
+  const validos = apl.filter(isValido);
+  const vencidos = linhasPorFaixaPrazo(linhas, "vencido");
+  const dias30 = linhasPorFaixaPrazo(linhas, "30");
+  const dias60 = linhasPorFaixaPrazo(linhas, "60");
+  const dias90 = linhasPorFaixaPrazo(linhas, "90");
+  const devendo = linhas.filter(l => l.status === "devendo");
+
+  const card = (titulo, valor, detalhe, cls="") => `
+    <div class="gestor-mini-card ${cls}">
+      <span>${titulo}</span>
+      <strong>${valor}</strong>
+      <small>${detalhe}</small>
+    </div>`;
+
+  if(boxResumo){
+    boxResumo.innerHTML = [
+      card("Aderência", pct(validos.length, apl.length), "treinamentos aplicáveis", "ok"),
+      card("Vencidos", qtdPessoasUnicas(vencidos), "pessoa(s)", "danger"),
+      card("30 dias", qtdPessoasUnicas(dias30), "pessoa(s)", "warn"),
+      card("60 dias", qtdPessoasUnicas(dias60), "pessoa(s)", "blue"),
+      card("90 dias", qtdPessoasUnicas(dias90), "pessoa(s)", "green"),
+      card("Devendo", qtdPessoasUnicas(devendo), "sem registro", "muted")
+    ].join("");
+  }
+
+  if(boxPrioridades){
+    const prioridade = [...vencidos, ...devendo, ...dias30]
+      .sort((a,b) => {
+        const pa = a.status === "vencido" ? 0 : a.status === "devendo" ? 1 : 2;
+        const pb = b.status === "vencido" ? 0 : b.status === "devendo" ? 1 : 2;
+        return pa - pb || (a.dias ?? 9999) - (b.dias ?? 9999) || a.colaborador.nome.localeCompare(b.colaborador.nome);
+      })
+      .slice(0,12);
+    boxPrioridades.innerHTML = prioridade.map(l => `
+      <div class="alert-item compact-alert">
+        <span class="status ${l.status}">${STATUS_LABEL[l.status] || l.status}</span>
+        <strong>${escapeHtml(l.colaborador.nome)}</strong>
+        <small>${escapeHtml(l.treinamento.nome)} • ${escapeHtml(l.colaborador.setor || "")} • ${l.detalhe || ""}</small>
+      </div>`).join("") || `<div class="empty small-empty">Sem pendência crítica para a(s) área(s).</div>`;
+  }
+
+  if(boxTreinos){
+    const map = new Map();
+    [...vencidos, ...devendo, ...dias30].forEach(l => {
+      const id = l.treinamento.id;
+      if(!map.has(id)) map.set(id, { nome:l.treinamento.nome, total:0, vencidos:0, devendo:0, dias30:0 });
+      const item = map.get(id);
+      item.total++;
+      if(l.status === "vencido") item.vencidos++;
+      if(l.status === "devendo") item.devendo++;
+      if(l.faixa === "30") item.dias30++;
+    });
+    const arr = [...map.values()].sort((a,b)=>b.total-a.total).slice(0,8);
+    boxTreinos.innerHTML = arr.map(x => `
+      <div class="adherence-row">
+        <div><strong>${escapeHtml(x.nome)}</strong><small>${x.vencidos} vencido(s) • ${x.devendo} devendo • ${x.dias30} até 30 dias</small></div>
+        <span class="chip">${x.total}</span>
+      </div>`).join("") || `<div class="empty">Sem treinamentos críticos no momento.</div>`;
+  }
+
+  if(boxPlano){
+    boxPlano.innerHTML = `
+      <div class="charge-line danger"><strong>${qtdPessoasUnicas(vencidos)}</strong><span>cobrar regularização imediata</span></div>
+      <div class="charge-line warn"><strong>${qtdPessoasUnicas(dias30)}</strong><span>programar reciclagem nesta semana</span></div>
+      <div class="charge-line blue"><strong>${qtdPessoasUnicas(dias60)}</strong><span>planejar agenda com antecedência</span></div>
+      <div class="charge-line green"><strong>${qtdPessoasUnicas(dias90)}</strong><span>monitorar para não virar atraso</span></div>
+      <p class="charge-note">Perfil gestor é somente acompanhamento. Alterações devem ser solicitadas à Segurança do Trabalho.</p>
     `;
   }
 }
@@ -875,6 +1002,7 @@ function addSheet(wb, name, rows){
 }
 
 function exportarExcel(){
+  if(isGestor()){ toast("Perfil gestor não exporta Excel pelo sistema. Solicite relatório à Segurança do Trabalho."); return; }
   if(!window.XLSX){ toast("Biblioteca Excel ainda não carregou. Tente novamente."); return; }
   const wb = XLSX.utils.book_new();
   const status = linhasStatus().filter(linhaPermitidaParaPerfil).map(l => ({
@@ -996,9 +1124,9 @@ function renderAgenda(){
 
 async function salvarAcesso(){
   if(!isGerencia()){ toast("Apenas Gerência."); return; }
-  const row = { auth_user_id:$("accUid").value.trim() || null, usuario:$("accUsuario").value.trim(), nome:$("accNome").value.trim(), perfil:$("accPerfil").value, area_responsavel:$("accAreaResponsavel")?.value.trim() || null, ativo:true };
+  const row = { auth_user_id:$("accUid").value.trim() || null, usuario:normalizeEmail($("accUsuario").value), nome:$("accNome").value.trim(), perfil:$("accPerfil").value, area_responsavel:$("accAreaResponsavel")?.value.trim() || null, ativo:true };
   if(!row.usuario || !row.nome){ toast("Informe e-mail/usuário e nome."); return; }
-  if(row.perfil === "gestor" && !row.area_responsavel){ toast("Para perfil gestor, informe a área responsável exatamente como aparece no setor."); return; }
+  if(row.perfil === "gestor" && !row.area_responsavel){ toast("Para perfil gestor, informe uma ou mais áreas separadas por vírgula."); return; }
   const { error } = await supabaseClient.from("usuarios_app").upsert(row, { onConflict:"usuario" });
   if(error){ console.error(error); toast("Erro ao salvar acesso."); return; }
   await auditar("salvar_acesso", { usuario:row.usuario, perfil:row.perfil }); await loadAll(); renderAcessos(); toast("Acesso salvo. Lembre de criar/vincular o usuário no Supabase Auth.");
