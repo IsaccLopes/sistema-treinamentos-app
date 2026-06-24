@@ -14,7 +14,7 @@ const STATUS_LABEL = {
 let supabaseClient;
 let session = null;
 let perfil = null;
-let db = { colaboradores: [], treinamentos: [], matriz: [], agenda: [], usuarios: [], auditoria: [], historico: [] };
+let db = { colaboradores: [], treinamentos: [], matriz: [], agenda: [], usuarios: [], auditoria: [], historico: [], grupos: [], grupoItens: [] };
 let statusAtivo = "vencido";
 let selecionadosAtualizacao = new Set();
 
@@ -65,7 +65,8 @@ function bindEvents(){
   }));
   ["dashFiltroTexto","dashFiltroSetor","dashFiltroTreinamento"].forEach(id => $(id).addEventListener("input", renderDashboard));
   $("btnLimparFiltros").addEventListener("click", () => { $("dashFiltroTexto").value=""; $("dashFiltroSetor").value=""; $("dashFiltroTreinamento").value=""; renderDashboard(); });
-  $("btnReload").addEventListener("click", async () => { await loadAll(); renderAll(); toast("Dados atualizados."); });
+  $("btnReload").addEventListener("click", async () => { await loadAll(); hydrateSelects(); renderAll(); toast("Dados atualizados."); });
+  if($("btnExportExcel")) $("btnExportExcel").addEventListener("click", exportarExcel);
   $("btnConsultaBuscar").addEventListener("click", consultaInterna);
   $("consultaBusca").addEventListener("keydown", e => { if(e.key === "Enter") consultaInterna(); });
   $("qrBusca").addEventListener("input", renderQrSelect);
@@ -81,8 +82,14 @@ function bindEvents(){
   $("btnNovoColab").addEventListener("click", limparFormColab);
   $("btnSalvarColab").addEventListener("click", salvarColaborador);
   $("btnExcluirColab").addEventListener("click", excluirColaborador);
+  if($("btnAplicarGrupoColab")) $("btnAplicarGrupoColab").addEventListener("click", aplicarGrupoAoColaborador);
   $("baseBusca").addEventListener("input", renderBaseColabs);
+  if($("treBusca")) $("treBusca").addEventListener("input", renderTreinamentosBase);
+  if($("btnNovoTreinamento")) $("btnNovoTreinamento").addEventListener("click", limparFormTreinamento);
   $("btnSalvarTreinamento").addEventListener("click", salvarTreinamento);
+  if($("btnSalvarGrupo")) $("btnSalvarGrupo").addEventListener("click", salvarGrupoTreinamento);
+  if($("btnLimparGrupo")) $("btnLimparGrupo").addEventListener("click", limparFormGrupo);
+  if($("grupoBuscaTreinamento")) $("grupoBuscaTreinamento").addEventListener("input", renderGrupoTreinamentosLista);
   $("btnSalvarAgenda").addEventListener("click", salvarAgenda);
   $("btnSalvarAcesso").addEventListener("click", salvarAcesso);
   if($("btnFecharModalVinculo")) $("btnFecharModalVinculo").addEventListener("click", fecharModalVinculo);
@@ -151,16 +158,28 @@ function abrirPainel(view){
 }
 
 async function loadAll(){
-  const [colabs, treinamentos, matriz, agenda, usuarios, auditoria, historico] = await Promise.all([
-    selectAll("colaboradores", "*") ,
+  const [colabs, treinamentos, matriz, agenda, usuarios, auditoria, historico, grupos, grupoItens] = await Promise.all([
+    selectAll("colaboradores", "*"),
     selectAll("treinamentos", "*"),
     selectAll("matriz_treinamentos", "*"),
     selectAll("agenda_treinamentos", "*"),
     perfil?.perfil === "gerencia" ? selectAll("usuarios_app", "*") : Promise.resolve([]),
     selectAll("auditoria_treinamentos", "*"),
-    selectAll("historico_treinamentos", "*").catch(() => [])
+    selectAll("historico_treinamentos", "*").catch(() => []),
+    selectAll("grupos_treinamento", "*").catch(() => []),
+    selectAll("grupos_treinamento_itens", "*").catch(() => [])
   ]);
-  db = { colaboradores: colabs || [], treinamentos: treinamentos || [], matriz: matriz || [], agenda: agenda || [], usuarios: usuarios || [], auditoria: auditoria || [], historico: historico || [] };
+  db = {
+    colaboradores: colabs || [],
+    treinamentos: treinamentos || [],
+    matriz: matriz || [],
+    agenda: agenda || [],
+    usuarios: usuarios || [],
+    auditoria: auditoria || [],
+    historico: historico || [],
+    grupos: grupos || [],
+    grupoItens: grupoItens || []
+  };
 }
 
 async function selectAll(table, columns="*"){
@@ -182,14 +201,23 @@ function hydrateSelects(){
   $("dashFiltroTreinamento").innerHTML = optsTre;
   $("updTreinamento").innerHTML = optsTre;
   $("agendaTreinamento").innerHTML = optsTre;
-  renderQrSelect(); renderUpdatePeople();
+  const optsGrupo = `<option value="">Sem grupo definido</option>` + (db.grupos || []).filter(g => g.ativo !== false).sort((a,b)=>a.nome.localeCompare(b.nome)).map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.nome)}</option>`).join("");
+  if($("colabGrupo")) $("colabGrupo").innerHTML = optsGrupo;
+  renderQrSelect(); renderUpdatePeople(); renderGrupoTreinamentosLista(); renderGruposTreinamento(); renderTreinamentosBase();
 }
 
-function renderAll(){ renderDashboard(); renderQrSelect(); renderUpdatePeople(); renderBaseColabs(); renderAgenda(); renderAuditoria(); renderAcessos(); }
+function renderAll(){ renderDashboard(); renderQrSelect(); renderUpdatePeople(); renderBaseColabs(); renderTreinamentosBase(); renderGrupoTreinamentosLista(); renderGruposTreinamento(); renderAgenda(); renderAuditoria(); renderAcessos(); }
 
 function treinamentoById(id){ return db.treinamentos.find(t => t.id === id) || {}; }
 function colaboradorById(id){ return db.colaboradores.find(c => c.id === id) || {}; }
 function matrizDoColaborador(id){ return db.matriz.filter(m => m.colaborador_id === id); }
+function grupoById(id){ return (db.grupos || []).find(g => g.id === id) || {}; }
+function grupoNome(id){ return grupoById(id).nome || "Sem grupo"; }
+function treinamentosDoGrupo(grupoId){
+  return (db.grupoItens || []).filter(i => i.grupo_id === grupoId).map(i => i.treinamento_id);
+}
+function treinamentoIdsAtivos(){ return db.treinamentos.filter(t => t.ativo !== false).map(t => t.id); }
+
 
 function calcStatus(row){
   const t = treinamentoById(row.treinamento_id);
@@ -473,9 +501,20 @@ function consultaInterna(){
 }
 
 function renderFicha(c, target){
-  const linhas = linhasStatus().filter(l => l.colaborador.id === c.id).sort((a,b)=>a.status.localeCompare(b.status));
-  target.innerHTML = `<div class="profile-head"><h3>${escapeHtml(c.nome)}</h3><p>${escapeHtml(c.matricula || "sem matrícula")} • ${escapeHtml(c.setor || "sem setor")} • ${escapeHtml(c.funcao || "")}</p></div>
-    <div class="alert-list">${linhas.map(l => `<div class="alert-item"><span class="status ${l.status}">${STATUS_LABEL[l.status] || l.status}</span><strong>${escapeHtml(l.treinamento.nome)}</strong><small>${l.detalhe || ""} • realizado: ${brDate(l.row.data_realizacao)} • validade: ${brDate(l.validade)} • ${tipoLancamentoLabel(l.row.tipo_lancamento)}</small><div class="row-mini"><button class="btn secondary mini" onclick="abrirEditarVinculo('${escapeHtml(l.colaborador.id)}','${escapeHtml(l.treinamento.id)}')">Editar vínculo</button></div></div>`).join("") || `<div class="empty">Sem treinamentos vinculados.</div>`}</div>`;
+  const linhas = linhasStatus().filter(l => l.colaborador.id === c.id).sort((a,b)=>a.status.localeCompare(b.status) || a.treinamento.nome.localeCompare(b.treinamento.nome));
+  const renderAnexo = (l) => {
+    const botoes = [];
+    if(l.row.anexo_url) botoes.push(`<button class="btn secondary mini" onclick="abrirAnexo('${escapeHtml(l.row.anexo_url)}')">Ver anexo do lançamento</button>`);
+    if(l.treinamento.anexo_url) botoes.push(`<button class="btn secondary mini" onclick="abrirAnexo('${escapeHtml(l.treinamento.anexo_url)}')">Ver anexo padrão</button>`);
+    return botoes.join("");
+  };
+  const renderHistorico = (l) => {
+    const hs = historicoDoVinculo(l.colaborador.id, l.treinamento.id).slice(0,5);
+    if(!hs.length) return "";
+    return `<details class="history-box"><summary>Histórico (${hs.length})</summary>${hs.map(h => `<div class="history-row"><strong>${escapeHtml(tipoLancamentoLabel(h.tipo_lancamento))} • ${escapeHtml(h.acao || "lançamento")}</strong><small>${new Date(h.created_at).toLocaleString("pt-BR")} • ${escapeHtml(h.usuario || "")} • realizado: ${brDate(h.data_realizacao)} • validade: ${brDate(h.data_validade)}</small>${h.anexo_url ? `<button class="btn secondary mini" onclick="abrirAnexo('${escapeHtml(h.anexo_url)}')">Ver anexo histórico</button>` : ""}</div>`).join("")}</details>`;
+  };
+  target.innerHTML = `<div class="profile-head"><h3>${escapeHtml(c.nome)}</h3><p>${escapeHtml(c.matricula || "sem matrícula")} • ${escapeHtml(c.setor || "sem setor")} • ${escapeHtml(c.funcao || "")} • Grupo: ${escapeHtml(grupoNome(c.grupo_treinamento_id))}</p></div>
+    <div class="alert-list">${linhas.map(l => `<div class="alert-item"><span class="status ${l.status}">${STATUS_LABEL[l.status] || l.status}</span><strong>${escapeHtml(l.treinamento.nome)}</strong><small>${l.detalhe || ""} • realizado: ${brDate(l.row.data_realizacao)} • validade: ${brDate(l.validade)} • ${tipoLancamentoLabel(l.row.tipo_lancamento)} • alterado por: ${escapeHtml(l.row.atualizado_por || "-")}</small><div class="row-mini"><button class="btn secondary mini" onclick="abrirEditarVinculo('${escapeHtml(l.colaborador.id)}','${escapeHtml(l.treinamento.id)}')">Editar vínculo</button>${renderAnexo(l)}</div>${renderHistorico(l)}</div>`).join("") || `<div class="empty">Sem treinamentos vinculados.</div>`}</div>`;
 }
 
 function renderQrSelect(){
@@ -551,10 +590,22 @@ function renderUpdatePeople(){
   if(!$("updListaPessoas")) return;
   const q = norm($("updBusca").value);
   const people = db.colaboradores.filter(c => c.ativo !== false).filter(c => !q || `${c.nome} ${c.matricula} ${c.setor}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,300);
-  $("updListaPessoas").innerHTML = people.map(c => `<label class="check-person"><input type="checkbox" value="${escapeHtml(c.id)}" ${selecionadosAtualizacao.has(c.id)?"checked":""} onchange="togglePessoaUpdate(this)"><span><strong>${escapeHtml(c.nome)}</strong><small>${escapeHtml(c.matricula || "s/m")} • ${escapeHtml(c.setor || "")}</small></span></label>`).join("");
-  $("updQtdSelecionados").textContent = selecionadosAtualizacao.size;
+  $("updListaPessoas").innerHTML = people.map(c => `<label class="check-person"><input type="checkbox" value="${escapeHtml(c.id)}" ${selecionadosAtualizacao.has(c.id)?"checked":""} onchange="togglePessoaUpdate(this)"><span><strong>${escapeHtml(c.nome)}</strong><small>${escapeHtml(c.matricula || "s/m")} • ${escapeHtml(c.setor || "")} • ${escapeHtml(grupoNome(c.grupo_treinamento_id))}</small></span></label>`).join("");
+  renderSelecionadosAtualizacao();
 }
-window.togglePessoaUpdate = (el) => { el.checked ? selecionadosAtualizacao.add(el.value) : selecionadosAtualizacao.delete(el.value); $("updQtdSelecionados").textContent = selecionadosAtualizacao.size; };
+
+function renderSelecionadosAtualizacao(){
+  if(!$("updQtdSelecionados")) return;
+  $("updQtdSelecionados").textContent = selecionadosAtualizacao.size;
+  const box = $("updSelecionadosBox");
+  if(!box) return;
+  const pessoas = [...selecionadosAtualizacao].map(id => colaboradorById(id)).filter(c => c.id).sort((a,b)=>a.nome.localeCompare(b.nome));
+  if(!pessoas.length){ box.className = "selected-box empty-small"; box.innerHTML = "Nenhum colaborador selecionado."; return; }
+  box.className = "selected-box";
+  box.innerHTML = `<div class="selected-title">Selecionados agora:</div><div class="selected-chips">${pessoas.map(c => `<button type="button" class="selected-chip" onclick="removerSelecionadoUpdate('${escapeHtml(c.id)}')"><strong>${escapeHtml(c.nome)}</strong><small>${escapeHtml(c.matricula || "s/m")}</small><span>×</span></button>`).join("")}</div>`;
+}
+window.togglePessoaUpdate = (el) => { el.checked ? selecionadosAtualizacao.add(el.value) : selecionadosAtualizacao.delete(el.value); renderSelecionadosAtualizacao(); };
+window.removerSelecionadoUpdate = (id) => { selecionadosAtualizacao.delete(id); renderUpdatePeople(); };
 function selecionarVisiveis(){ document.querySelectorAll("#updListaPessoas input[type=checkbox]").forEach(i => selecionadosAtualizacao.add(i.value)); renderUpdatePeople(); }
 function calcularValidadeUpdate(){
   const tre = treinamentoById($("updTreinamento").value); const data = $("updData").value;
@@ -588,12 +639,12 @@ async function marcarObrigatorio(){
   await loadAll(); renderAll(); toast("Treinamento aplicado como obrigatório.");
 }
 
-function limparFormColab(){ ["colabId","colabMatricula","colabNome","colabSetor","colabFuncao"].forEach(id => $(id).value=""); $("colabAtivo").checked=true; }
-window.editarColab = (id) => { const c = colaboradorById(id); if(!c.id) return; $("colabId").value=c.id; $("colabMatricula").value=c.matricula||""; $("colabNome").value=c.nome||""; $("colabSetor").value=c.setor||""; $("colabFuncao").value=c.funcao||""; $("colabAtivo").checked=c.ativo!==false; window.scrollTo({top:0,behavior:"smooth"}); };
+function limparFormColab(){ ["colabId","colabMatricula","colabNome","colabSetor","colabFuncao"].forEach(id => $(id).value=""); if($("colabGrupo")) $("colabGrupo").value=""; $("colabAtivo").checked=true; }
+window.editarColab = (id) => { const c = colaboradorById(id); if(!c.id) return; $("colabId").value=c.id; $("colabMatricula").value=c.matricula||""; $("colabNome").value=c.nome||""; $("colabSetor").value=c.setor||""; $("colabFuncao").value=c.funcao||""; if($("colabGrupo")) $("colabGrupo").value=c.grupo_treinamento_id||""; $("colabAtivo").checked=c.ativo!==false; window.scrollTo({top:0,behavior:"smooth"}); };
 
 async function salvarColaborador(){
   const id = $("colabId").value || `mat-${($("colabMatricula").value || uid()).replace(/[^a-zA-Z0-9]/g,"")}`;
-  const row = { id, matricula:$("colabMatricula").value.trim() || null, nome:$("colabNome").value.trim(), setor:$("colabSetor").value.trim(), funcao:$("colabFuncao").value.trim(), ativo:$("colabAtivo").checked };
+  const row = { id, matricula:$("colabMatricula").value.trim() || null, nome:$("colabNome").value.trim(), setor:$("colabSetor").value.trim(), funcao:$("colabFuncao").value.trim(), grupo_treinamento_id:$("colabGrupo")?.value || null, ativo:$("colabAtivo").checked };
   if(!row.nome){ toast("Informe o nome."); return; }
   const { error } = await supabaseClient.from("colaboradores").upsert(row);
   if(error){ console.error(error); toast("Erro ao salvar colaborador. Verifique matrícula duplicada."); return; }
@@ -609,25 +660,206 @@ async function excluirColaborador(){
   await auditar("excluir_colaborador", { id }); await loadAll(); renderAll(); limparFormColab(); toast("Colaborador excluído.");
 }
 
+function limparFormTreinamento(){
+  ["treId","treNome","treDias","treSetores"].forEach(id => { if($(id)) $(id).value=""; });
+  if($("treAnexo")) $("treAnexo").value="";
+  if($("treValidadeDireta")) $("treValidadeDireta").checked=false;
+  if($("treAtivo")) $("treAtivo").checked=true;
+}
+
+window.editarTreinamento = (id) => {
+  const t = treinamentoById(id); if(!t.id) return;
+  $("treId").value = t.id;
+  $("treNome").value = t.nome || "";
+  $("treDias").value = t.periodicidade_dias || 0;
+  $("treSetores").value = Array.isArray(t.setores_aplicaveis) ? t.setores_aplicaveis.join(", ") : (t.setores_aplicaveis || "");
+  $("treValidadeDireta").checked = !!t.validade_direta;
+  if($("treAtivo")) $("treAtivo").checked = t.ativo !== false;
+  if($("treAnexo")) $("treAnexo").value = "";
+  window.scrollTo({top:0, behavior:"smooth"});
+};
+
 async function salvarTreinamento(){
-  const nome = $("treNome").value.trim(); const dias = Number($("treDias").value || 0); const setores = $("treSetores").value.trim();
+  const idAtual = $("treId")?.value || "";
+  const nome = $("treNome").value.trim();
+  const dias = Number($("treDias").value || 0);
+  const setores = $("treSetores").value.trim();
   if(!nome){ toast("Informe o nome do treinamento."); return; }
   let anexo = { path:null, name:null };
   const file = $("treAnexo")?.files?.[0];
   if(file) anexo = await uploadAnexo(file, `catalogo/${Date.now()}`);
-  const row = { id:`tre-${Date.now()}`, nome, periodicidade:`${dias || 0} dias`, periodicidade_dias:dias || null, validade_direta:$("treValidadeDireta").checked, ativo:true, setores_aplicaveis:setores ? setores.split(",").map(s=>s.trim()).filter(Boolean) : [], anexo_url:anexo.path, anexo_nome:anexo.name };
-  const { error } = await supabaseClient.from("treinamentos").insert(row);
-  if(error){ console.error(error); toast("Erro ao cadastrar treinamento. Rode o SQL 05 antes."); return; }
-  await auditar("cadastrar_treinamento", { nome, dias, setores, anexo:anexo.name });
-  ["treNome","treDias","treSetores"].forEach(id => $(id).value=""); if($("treAnexo")) $("treAnexo").value="";
-  await loadAll(); hydrateSelects(); renderAll(); toast("Treinamento cadastrado.");
+  const anterior = idAtual ? treinamentoById(idAtual) : {};
+  const row = {
+    id: idAtual || `tre-${Date.now()}`,
+    nome,
+    periodicidade:`${dias || 0} dias`,
+    periodicidade_dias:dias || null,
+    validade_direta:$("treValidadeDireta").checked,
+    ativo:$("treAtivo") ? $("treAtivo").checked : true,
+    setores_aplicaveis:setores ? setores.split(",").map(s=>s.trim()).filter(Boolean) : [],
+    anexo_url:anexo.path || anterior.anexo_url || null,
+    anexo_nome:anexo.name || anterior.anexo_nome || null
+  };
+  const { error } = await supabaseClient.from("treinamentos").upsert(row, { onConflict:"id" });
+  if(error){ console.error(error); toast("Erro ao salvar treinamento. Rode o SQL 06/05 antes."); return; }
+  await auditar(idAtual ? "editar_treinamento" : "cadastrar_treinamento", { id:row.id, nome, dias, setores, anexo:anexo.name });
+  limparFormTreinamento();
+  await loadAll(); hydrateSelects(); renderAll(); toast(idAtual ? "Treinamento atualizado." : "Treinamento cadastrado.");
+}
+
+function renderTreinamentosBase(){
+  if(!$("tbodyTreinamentos")) return;
+  const q = norm($("treBusca")?.value);
+  const rows = db.treinamentos.filter(t => !q || `${t.id} ${t.nome} ${t.periodicidade_dias} ${JSON.stringify(t.setores_aplicaveis || [])}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,800);
+  $("tbodyTreinamentos").innerHTML = rows.map(t => {
+    const grupos = (db.grupoItens || []).filter(i => i.treinamento_id === t.id).map(i => grupoNome(i.grupo_id)).filter(Boolean).join(", ");
+    const anex = t.anexo_url ? `<button class="btn secondary mini" onclick="abrirAnexo('${escapeHtml(t.anexo_url)}')">Anexo</button>` : "";
+    return `<tr><td>${escapeHtml(t.id)}</td><td><strong>${escapeHtml(t.nome)}</strong></td><td>${escapeHtml(t.periodicidade_dias || "-")} dias</td><td><small>${escapeHtml(grupos || (Array.isArray(t.setores_aplicaveis) ? t.setores_aplicaveis.join(", ") : ""))}</small></td><td>${t.ativo!==false?"Ativo":"Inativo"}</td><td><div class="row-mini"><button class="btn secondary mini" onclick="editarTreinamento('${escapeHtml(t.id)}')">Editar</button>${anex}</div></td></tr>`;
+  }).join("") || `<tr><td colspan="6">Nenhum treinamento encontrado.</td></tr>`;
 }
 
 function renderBaseColabs(){
   if(!$("tbodyColabs")) return;
   const q = norm($("baseBusca").value);
-  const rows = db.colaboradores.filter(c => !q || `${c.matricula} ${c.nome} ${c.setor} ${c.funcao}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,500);
-  $("tbodyColabs").innerHTML = rows.map(c => `<tr><td>${escapeHtml(c.matricula||"")}</td><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.setor||"")}</td><td>${escapeHtml(c.funcao||"")}</td><td>${c.ativo!==false?"Ativo":"Inativo"}</td><td><button class="btn secondary" onclick="editarColab('${escapeHtml(c.id)}')">Editar</button></td></tr>`).join("");
+  const rows = db.colaboradores.filter(c => !q || `${c.matricula} ${c.nome} ${c.setor} ${c.funcao} ${grupoNome(c.grupo_treinamento_id)}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome)).slice(0,500);
+  $("tbodyColabs").innerHTML = rows.map(c => `<tr><td>${escapeHtml(c.matricula||"")}</td><td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.setor||"")}</td><td>${escapeHtml(c.funcao||"")}<br><small>Grupo: ${escapeHtml(grupoNome(c.grupo_treinamento_id))}</small></td><td>${c.ativo!==false?"Ativo":"Inativo"}</td><td><button class="btn secondary" onclick="editarColab('${escapeHtml(c.id)}')">Editar</button></td></tr>`).join("");
+}
+
+
+async function abrirAnexo(path){
+  if(!path){ toast("Anexo não encontrado."); return; }
+  const { data, error } = await supabaseClient.storage.from("treinamentos-anexos").createSignedUrl(path, 300);
+  if(error){ console.error(error); toast("Não consegui abrir o anexo. Verifique permissões do Storage."); return; }
+  window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+}
+window.abrirAnexo = abrirAnexo;
+
+function renderGrupoTreinamentosLista(){
+  if(!$("grupoTreinamentosLista")) return;
+  const q = norm($("grupoBuscaTreinamento")?.value);
+  const grupoId = $("grupoId")?.value;
+  const marcados = new Set((db.grupoItens || []).filter(i => i.grupo_id === grupoId).map(i => i.treinamento_id));
+  const rows = db.treinamentos.filter(t => t.ativo !== false).filter(t => !q || `${t.nome} ${t.id}`.toLowerCase().includes(q)).sort((a,b)=>a.nome.localeCompare(b.nome));
+  $("grupoTreinamentosLista").innerHTML = rows.map(t => `<label class="check-person"><input type="checkbox" class="grupo-treino-check" value="${escapeHtml(t.id)}" ${marcados.has(t.id)?"checked":""}><span><strong>${escapeHtml(t.nome)}</strong><small>${escapeHtml(t.periodicidade_dias || "-")} dias • ${escapeHtml(t.id)}</small></span></label>`).join("") || `<div class="empty">Nenhum treinamento encontrado.</div>`;
+}
+
+function limparFormGrupo(){
+  ["grupoId","grupoNome","grupoDescricao","grupoBuscaTreinamento"].forEach(id => { if($(id)) $(id).value=""; });
+  renderGrupoTreinamentosLista();
+}
+
+window.editarGrupoTreinamento = (id) => {
+  const g = grupoById(id); if(!g.id) return;
+  $("grupoId").value = g.id;
+  $("grupoNome").value = g.nome || "";
+  $("grupoDescricao").value = g.descricao || "";
+  if($("grupoBuscaTreinamento")) $("grupoBuscaTreinamento").value = "";
+  renderGrupoTreinamentosLista();
+  window.scrollTo({top:0, behavior:"smooth"});
+};
+
+async function salvarGrupoTreinamento(){
+  const id = $("grupoId")?.value || "";
+  const nome = $("grupoNome")?.value.trim();
+  const descricao = $("grupoDescricao")?.value.trim();
+  if(!nome){ toast("Informe o nome do grupo."); return; }
+  let grupoId = id;
+  if(id){
+    const { error } = await supabaseClient.from("grupos_treinamento").update({ nome, descricao, ativo:true, updated_at:new Date().toISOString() }).eq("id", id);
+    if(error){ console.error(error); toast("Erro ao atualizar grupo."); return; }
+  }else{
+    const { data, error } = await supabaseClient.from("grupos_treinamento").insert({ nome, descricao, ativo:true, created_by:perfil?.usuario }).select("id").single();
+    if(error){ console.error(error); toast("Erro ao criar grupo. Rode o SQL 06."); return; }
+    grupoId = data.id;
+  }
+  const idsTre = [...document.querySelectorAll(".grupo-treino-check:checked")].map(i => i.value);
+  await supabaseClient.from("grupos_treinamento_itens").delete().eq("grupo_id", grupoId);
+  if(idsTre.length){
+    const { error:errItens } = await supabaseClient.from("grupos_treinamento_itens").insert(idsTre.map(tid => ({ grupo_id:grupoId, treinamento_id:tid })));
+    if(errItens){ console.error(errItens); toast("Grupo salvo, mas erro ao salvar treinamentos do grupo."); return; }
+  }
+  await auditar(id ? "editar_grupo_treinamento" : "criar_grupo_treinamento", { grupoId, nome, qtd_treinamentos:idsTre.length });
+  await loadAll(); hydrateSelects(); renderAll(); limparFormGrupo(); toast("Grupo de treinamentos salvo.");
+}
+
+function renderGruposTreinamento(){
+  if(!$("listaGrupos")) return;
+  const grupos = (db.grupos || []).filter(g => g.ativo !== false).sort((a,b)=>a.nome.localeCompare(b.nome));
+  $("listaGrupos").innerHTML = grupos.map(g => {
+    const itens = treinamentosDoGrupo(g.id).map(id => treinamentoById(id).nome).filter(Boolean);
+    return `<div class="alert-item"><strong>${escapeHtml(g.nome)}</strong><small>${escapeHtml(g.descricao || "")} • ${itens.length} treinamento(s)</small><details class="history-box"><summary>Ver treinamentos</summary>${itens.map(n => `<div class="history-row"><small>${escapeHtml(n)}</small></div>`).join("") || "<small>Nenhum treinamento no grupo.</small>"}</details><div class="row-mini"><button class="btn secondary mini" onclick="editarGrupoTreinamento('${escapeHtml(g.id)}')">Editar grupo</button></div></div>`;
+  }).join("") || `<div class="empty">Nenhum grupo cadastrado.</div>`;
+}
+
+async function aplicarGrupoAoColaborador(){
+  const colaboradorId = $("colabId")?.value;
+  const grupoId = $("colabGrupo")?.value || null;
+  if(!colaboradorId){ toast("Selecione/salve um colaborador antes de aplicar grupo."); return; }
+  const c = colaboradorById(colaboradorId);
+  if(!grupoId){
+    const { error } = await supabaseClient.from("colaboradores").update({ grupo_treinamento_id:null }).eq("id", colaboradorId);
+    if(error){ console.error(error); toast("Erro ao limpar grupo."); return; }
+    await auditar("limpar_grupo_colaborador", { colaboradorId });
+    await loadAll(); hydrateSelects(); renderAll(); toast("Grupo removido do colaborador."); return;
+  }
+  const idsGrupo = new Set(treinamentosDoGrupo(grupoId));
+  if(!idsGrupo.size){ toast("Esse grupo ainda não tem treinamentos."); return; }
+  if(!confirm(`Aplicar o grupo '${grupoNome(grupoId)}' para ${c.nome}? Os treinamentos fora do grupo ficarão como 'Não se aplica' mantendo histórico.`)) return;
+  const allTre = treinamentoIdsAtivos();
+  const upserts = [];
+  for(const tid of allTre){
+    const atual = db.matriz.find(m => m.colaborador_id === colaboradorId && m.treinamento_id === tid);
+    if(idsGrupo.has(tid)){
+      if(!atual || atual.tipo === "nao_aplica") upserts.push({ colaborador_id:colaboradorId, treinamento_id:tid, tipo:"em_branco", tipo_lancamento:"ajuste", observacao:`Aplicado pelo grupo ${grupoNome(grupoId)}`, atualizado_por:perfil.usuario });
+    }else{
+      upserts.push({ colaborador_id:colaboradorId, treinamento_id:tid, tipo:"nao_aplica", tipo_lancamento:"nao_aplica", observacao:`Fora do grupo obrigatório ${grupoNome(grupoId)}`, atualizado_por:perfil.usuario });
+    }
+  }
+  const { error:errColab } = await supabaseClient.from("colaboradores").update({ grupo_treinamento_id:grupoId }).eq("id", colaboradorId);
+  if(errColab){ console.error(errColab); toast("Erro ao vincular grupo no colaborador."); return; }
+  if(upserts.length){
+    for(const r of upserts){ await gravarHistoricoAntes([colaboradorId], r.treinamento_id, r.tipo_lancamento, r, r.tipo === "nao_aplica" ? "grupo_marcar_nao_aplica" : "grupo_aplicar_obrigatorio"); }
+    const { error } = await supabaseClient.from("matriz_treinamentos").upsert(upserts, { onConflict:"colaborador_id,treinamento_id" });
+    if(error){ console.error(error); toast("Erro ao aplicar treinamentos do grupo."); return; }
+  }
+  await auditar("aplicar_grupo_colaborador", { colaboradorId, grupoId, grupo:grupoNome(grupoId), alteracoes:upserts.length });
+  await loadAll(); hydrateSelects(); renderAll(); toast("Grupo aplicado ao colaborador e matriz ajustada.");
+}
+
+function addSheet(wb, name, rows){
+  const ws = XLSX.utils.json_to_sheet(rows && rows.length ? rows : [{ aviso:"Sem dados" }]);
+  XLSX.utils.book_append_sheet(wb, ws, name.slice(0,31));
+}
+
+function exportarExcel(){
+  if(!window.XLSX){ toast("Biblioteca Excel ainda não carregou. Tente novamente."); return; }
+  const wb = XLSX.utils.book_new();
+  const status = linhasStatus().map(l => ({
+    colaborador_id:l.colaborador.id, matricula:l.colaborador.matricula, colaborador:l.colaborador.nome, setor:l.colaborador.setor, funcao:l.colaborador.funcao,
+    grupo_id:l.colaborador.grupo_treinamento_id || "", grupo:grupoNome(l.colaborador.grupo_treinamento_id), treinamento_id:l.treinamento.id, treinamento:l.treinamento.nome,
+    periodicidade_dias:l.treinamento.periodicidade_dias, tipo:l.row.tipo, status:l.status, detalhe:l.detalhe || "", faixa:l.faixa || "", dias:l.dias ?? "",
+    data_realizacao:l.row.data_realizacao || "", data_validade:l.validade || "", tipo_lancamento:l.row.tipo_lancamento || "", observacao:l.row.observacao || "",
+    anexo_url:l.row.anexo_url || "", anexo_nome:l.row.anexo_nome || "", atualizado_por:l.row.atualizado_por || "", atualizado_em:l.row.atualizado_em || ""
+  }));
+  addSheet(wb, "Resumo", [{ exportado_em:new Date().toLocaleString("pt-BR"), usuario:perfil?.usuario, colaboradores:db.colaboradores.length, treinamentos:db.treinamentos.length, registros_matriz:db.matriz.length, historico:db.historico.length, auditoria:db.auditoria.length }]);
+  addSheet(wb, "Colaboradores", db.colaboradores.map(c => ({...c, grupo_nome:grupoNome(c.grupo_treinamento_id)})));
+  addSheet(wb, "Treinamentos", db.treinamentos);
+  addSheet(wb, "Situacao atual", status);
+  addSheet(wb, "Vencidos", status.filter(r => r.status === "vencido"));
+  addSheet(wb, "30 dias", status.filter(r => r.faixa === "30"));
+  addSheet(wb, "60 dias", status.filter(r => r.faixa === "60"));
+  addSheet(wb, "90 dias", status.filter(r => r.faixa === "90"));
+  addSheet(wb, "Devendo", status.filter(r => r.status === "devendo"));
+  addSheet(wb, "Matriz raw", db.matriz);
+  addSheet(wb, "Historico", db.historico);
+  addSheet(wb, "Auditoria", db.auditoria);
+  addSheet(wb, "Agenda", db.agenda);
+  addSheet(wb, "Grupos", db.grupos);
+  addSheet(wb, "Grupos itens", db.grupoItens);
+  if(perfil?.perfil === "gerencia") addSheet(wb, "Usuarios app", db.usuarios);
+  const nome = `treinamentos_adm_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, nome);
+  auditar("exportar_excel", { arquivo:nome, abas: wb.SheetNames }).catch(console.warn);
 }
 
 async function uploadAnexo(file, pasta="anexos"){

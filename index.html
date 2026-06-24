@@ -4,14 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ADM | Sistema de Treinamentos</title>
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0f2b57" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script defer src="app.js?v=7"></script>
-  <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0f2b57">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
+  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script defer src="app.js?v=10"></script>
 </head>
 <body>
   <div id="loading" class="loading">Carregando sistema...</div>
@@ -84,7 +85,7 @@
             <span class="eyebrow">Gestão de treinamentos</span>
             <h2>Painel resumido por colaborador</h2>
           </div>
-          <button id="btnReload" class="btn secondary">Atualizar dados</button>
+          <div class="row-mini title-actions"><button id="btnReload" class="btn secondary">Atualizar dados</button><button id="btnExportExcel" class="btn">Exportar Excel</button></div>
         </div>
 
         <div class="filters card">
@@ -239,6 +240,7 @@
             <label><span>Anexo</span><input id="updAnexo" type="file" /></label>
             <label><span>Observação/evidência</span><textarea id="updObs" rows="4" placeholder="Lista de presença, certificado, instrutor..."></textarea></label>
             <div class="selected-count"><strong id="updQtdSelecionados">0</strong> colaborador(es) selecionado(s)</div>
+            <div id="updSelecionadosBox" class="selected-box empty-small">Nenhum colaborador selecionado.</div>
             <button id="btnSalvarAtualizacao" class="btn full">Salvar reciclagem</button>
             <button id="btnMarcarObrigatorio" class="btn secondary full">Aplicar como obrigatório sem data</button>
           </div>
@@ -255,22 +257,48 @@
             <label><span>Nome</span><input id="colabNome" type="text" /></label>
             <label><span>Setor</span><input id="colabSetor" type="text" /></label>
             <label><span>Função</span><input id="colabFuncao" type="text" /></label>
+            <label><span>Grupo de treinamentos</span><select id="colabGrupo"><option value="">Sem grupo definido</option></select></label>
             <label class="inline"><input id="colabAtivo" type="checkbox" checked /> <span>Ativo</span></label>
             <div class="row-mini">
               <button id="btnSalvarColab" class="btn">Salvar colaborador</button>
               <button id="btnExcluirColab" class="btn danger">Excluir</button>
+              <button id="btnAplicarGrupoColab" class="btn secondary">Aplicar grupo</button>
             </div>
           </div>
           <div class="card">
-            <h3>Novo treinamento</h3>
+            <div class="card-head"><h3>Treinamento</h3><button id="btnNovoTreinamento" class="btn secondary">Novo</button></div>
+            <input id="treId" type="hidden" />
             <label><span>Nome</span><input id="treNome" type="text" /></label>
             <label><span>Periodicidade em dias</span><input id="treDias" type="number" min="0" placeholder="365" /></label>
             <label><span>Setores aplicáveis</span><input id="treSetores" type="text" placeholder="Envase, Manutenção ou TODOS" /></label>
             <label><span>Anexo padrão do treinamento</span><input id="treAnexo" type="file" /></label>
             <label class="inline"><input id="treValidadeDireta" type="checkbox" /> <span>Data lançada já é validade direta</span></label>
-            <button id="btnSalvarTreinamento" class="btn full">Cadastrar treinamento</button>
+            <label class="inline"><input id="treAtivo" type="checkbox" checked /> <span>Treinamento ativo</span></label>
+            <button id="btnSalvarTreinamento" class="btn full">Salvar treinamento</button>
           </div>
         </div>
+        
+        <div class="grid-two mt">
+          <div class="card">
+            <div class="card-head"><h3>Grupos de treinamentos</h3><button id="btnLimparGrupo" class="btn secondary">Novo grupo</button></div>
+            <input id="grupoId" type="hidden" />
+            <label><span>Nome do grupo</span><input id="grupoNome" type="text" placeholder="Ex.: Gestão, Operação, Laboratório" /></label>
+            <label><span>Descrição</span><input id="grupoDescricao" type="text" placeholder="Opcional" /></label>
+            <label><span>Buscar treinamentos do grupo</span><input id="grupoBuscaTreinamento" type="search" placeholder="Buscar treinamento" /></label>
+            <div id="grupoTreinamentosLista" class="check-list training-check-list"></div>
+            <button id="btnSalvarGrupo" class="btn full">Salvar grupo de treinamentos</button>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Grupos cadastrados</h3><span class="chip">gestão</span></div>
+            <div id="listaGrupos" class="alert-list"></div>
+          </div>
+        </div>
+
+        <div class="card mt">
+          <div class="card-head"><h3>Lista de treinamentos</h3><input id="treBusca" type="search" placeholder="Buscar treinamento" /></div>
+          <div class="table-wrap"><table><thead><tr><th>ID</th><th>Treinamento</th><th>Periodicidade</th><th>Setores/Grupos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodyTreinamentos"></tbody></table></div>
+        </div>
+
         <div class="card mt">
           <div class="card-head"><h3>Lista de colaboradores</h3><input id="baseBusca" type="search" placeholder="Buscar" /></div>
           <div class="table-wrap"><table><thead><tr><th>Matrícula</th><th>Nome</th><th>Setor</th><th>Função</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodyColabs"></tbody></table></div>
@@ -337,14 +365,5 @@
   </section>
 
   <div id="toast" class="toast hidden"></div>
-  <script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js")
-        .then(() => console.log("PWA ativa"))
-        .catch(err => console.error("Erro no service worker", err));
-    });
-  }
-</script>
 </body>
 </html>

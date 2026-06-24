@@ -1,30 +1,38 @@
-# Sistema de Treinamentos ADM - V3 LGPD
+# Sistema de Treinamentos ADM - V4 Gestão Completa
 
-Versão pública sem base de dados no GitHub. Os dados ficam protegidos no Supabase.
+Versão pública sem dados reais no GitHub. Dados ficam no Supabase.
 
-## Arquivos para subir no GitHub
+## Novidades V4
 
-Suba somente estes arquivos na raiz do repositório público:
+- Aba Atualizar mostra os nomes dos colaboradores selecionados.
+- Grupos de treinamentos: exemplo Gestão, Operação, Laboratório.
+- Aplicar grupo ao colaborador e marcar demais treinamentos como Não se aplica, mantendo histórico.
+- Editar periodicidade dos treinamentos já cadastrados.
+- Ver anexos ao abrir a ficha do colaborador.
+- Exportar Excel completo com colaboradores, treinamentos, situação atual, matriz, histórico, auditoria, agenda, grupos e usuários.
+- Lugar para adicionar treinamento novo continua na aba Base.
 
-- `index.html`
-- `style.css`
-- `app.js`
-- `README.md`
+## Antes de usar
 
-Não suba CSV, planilha, `data.js` ou pasta `supabase`.
+Rode no Supabase SQL Editor:
 
-## Novidades V3
+`supabase/06_grupos_exportacao_periodicidade.sql`
 
-- Botões rápidos: Vencidos, Até 30 dias, 31 a 60 dias, 61 a 90 dias e Devendo.
-- Dashboard visual de vencimentos por faixa.
-- Resumo para cobrança da área respeitando filtros.
-- Percentual de aderência geral e por filtro/setor/treinamento.
-- Aderência por treinamento e por setor.
-- Anexos em treinamento novo, reciclagem, integração e ajuste manual.
-- Histórico de lançamentos: integração, reciclagem, ajuste manual e não se aplica.
-- Edição de vínculo colaborador x treinamento mantendo histórico.
-- QR Code somente leitura, sem mostrar itens não aplicáveis.
+Se ainda não rodou a versão anterior, rode também:
 
-## Supabase
+`supabase/05_indicadores_anexos_historico.sql`
 
-Antes de usar recursos de anexos e histórico, rode os SQLs da pasta `supabase` no SQL Editor.
+## No GitHub público
+
+Suba apenas:
+
+- index.html
+- style.css
+- app.js
+- README.md
+- manifest.json
+- service-worker.js
+- icon-192.png
+- icon-512.png
+
+Não suba CSV, planilha nem data.js.
