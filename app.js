@@ -32,8 +32,21 @@ function isTecnico(){ return perfil?.perfil === "tecnico"; }
 function isGestor(){ return perfil?.perfil === "gestor"; }
 function canEdit(){ return isGerencia() || isTecnico(); }
 function areaGestor(){ return String(perfil?.area_responsavel || "").trim(); }
-function linhaPermitidaParaPerfil(l){ return !isGestor() || norm(l.colaborador?.setor) === norm(areaGestor()); }
-function colaboradoresVisiveis(){ return db.colaboradores.filter(c => !isGestor() || norm(c.setor) === norm(areaGestor())); }
+function areasGestor(){
+  return areaGestor()
+    .split(/[;,]/)
+    .map(a => a.trim())
+    .filter(Boolean);
+}
+function areaGestorLabel(){ return areasGestor().join(", ") || "não definida"; }
+function setorPermitidoGestor(setor){
+  if(!isGestor()) return true;
+  const areas = areasGestor().map(norm);
+  if(!areas.length) return false;
+  return areas.includes(norm(setor));
+}
+function linhaPermitidaParaPerfil(l){ return !isGestor() || setorPermitidoGestor(l.colaborador?.setor); }
+function colaboradoresVisiveis(){ return db.colaboradores.filter(c => !isGestor() || setorPermitidoGestor(c.setor)); }
 function roleLabel(){ return ({ gerencia:"Gerência", tecnico:"Técnico", gestor:"Gestor de área" }[perfil?.perfil] || perfil?.perfil || "perfil"); }
 function aplicarTelaPorPerfil(){
   const gestor = isGestor();
@@ -42,11 +55,11 @@ function aplicarTelaPorPerfil(){
   const banner = $("gestorBanner");
   if(banner){
     banner.classList.toggle("hidden", !gestor);
-    if(gestor) banner.querySelector("span").textContent = `Você está visualizando somente a área: ${areaGestor() || "não definida"}.`;
+    if(gestor) banner.querySelector("span").textContent = `Você está visualizando somente a(s) área(s): ${areaGestorLabel()}.`;
   }
   if($("btnExportExcel")) $("btnExportExcel").textContent = gestor ? "Exportar minha área" : "Exportar Excel";
   const title = document.querySelector("#dashboardPanel .title-row h2");
-  if(title) title.textContent = gestor ? `Painel do gestor - ${areaGestor() || "minha área"}` : "Painel resumido por colaborador";
+  if(title) title.textContent = gestor ? `Painel do gestor - ${areaGestorLabel()}` : "Painel resumido por colaborador";
 }
 
 window.addEventListener("DOMContentLoaded", init);
@@ -220,7 +233,13 @@ async function selectAll(table, columns="*"){
 function hydrateSelects(){
   const setores = [...new Set(db.colaboradores.map(c => c.setor).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   $("dashFiltroSetor").innerHTML = `<option value="">Todos</option>` + setores.map(s => `<option>${escapeHtml(s)}</option>`).join("");
-  if(isGestor()){ const area = areaGestor(); $("dashFiltroSetor").innerHTML = `<option value="${escapeHtml(area)}">${escapeHtml(area || "Minha área")}</option>`; $("dashFiltroSetor").value = area; $("dashFiltroSetor").disabled = true; } else { $("dashFiltroSetor").disabled = false; }
+  if(isGestor()){
+    const setoresGestor = [...new Set(colaboradoresVisiveis().map(c => c.setor).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    $("dashFiltroSetor").innerHTML = `<option value="">Todas minhas áreas</option>` + setoresGestor.map(s => `<option>${escapeHtml(s)}</option>`).join("");
+    $("dashFiltroSetor").disabled = false;
+  } else {
+    $("dashFiltroSetor").disabled = false;
+  }
   const optsTre = `<option value="">Todos</option>` + db.treinamentos.filter(t => t.ativo !== false).sort((a,b)=>a.nome.localeCompare(b.nome)).map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.nome)}</option>`).join("");
   $("dashFiltroTreinamento").innerHTML = optsTre;
   $("updTreinamento").innerHTML = optsTre;
@@ -283,8 +302,7 @@ function linhasFiltradas(){
   const treinamento = $("dashFiltroTreinamento")?.value || "";
   return linhasStatus().filter(linhaPermitidaParaPerfil).filter(l => {
     const hay = `${l.colaborador.matricula} ${l.colaborador.nome} ${l.colaborador.setor}`.toLowerCase();
-    const setorObrigatorio = isGestor() ? areaGestor() : setor;
-    return (!texto || hay.includes(texto)) && (!setorObrigatorio || norm(l.colaborador.setor) === norm(setorObrigatorio)) && (!treinamento || l.treinamento.id === treinamento);
+    return (!texto || hay.includes(texto)) && (!setor || norm(l.colaborador.setor) === norm(setor)) && (!treinamento || l.treinamento.id === treinamento);
   });
 }
 
@@ -866,7 +884,7 @@ function exportarExcel(){
     data_realizacao:l.row.data_realizacao || "", data_validade:l.validade || "", tipo_lancamento:l.row.tipo_lancamento || "", observacao:l.row.observacao || "",
     anexo_url:l.row.anexo_url || "", anexo_nome:l.row.anexo_nome || "", atualizado_por:l.row.atualizado_por || "", atualizado_em:l.row.atualizado_em || ""
   }));
-  addSheet(wb, "Resumo", [{ exportado_em:new Date().toLocaleString("pt-BR"), usuario:perfil?.usuario, perfil:perfil?.perfil, area: isGestor() ? areaGestor() : "Todas", colaboradores:colaboradoresVisiveis().length, treinamentos:db.treinamentos.length, registros_matriz:status.length, historico:db.historico.length, auditoria:db.auditoria.length }]);
+  addSheet(wb, "Resumo", [{ exportado_em:new Date().toLocaleString("pt-BR"), usuario:perfil?.usuario, perfil:perfil?.perfil, area: isGestor() ? areaGestorLabel() : "Todas", colaboradores:colaboradoresVisiveis().length, treinamentos:db.treinamentos.length, registros_matriz:status.length, historico:db.historico.length, auditoria:db.auditoria.length }]);
   addSheet(wb, "Colaboradores", colaboradoresVisiveis().map(c => ({...c, grupo_nome:grupoNome(c.grupo_treinamento_id)})));
   addSheet(wb, "Treinamentos", db.treinamentos);
   addSheet(wb, "Situacao atual", status);
@@ -988,7 +1006,7 @@ async function salvarAcesso(){
 
 function renderAcessos(){
   if(!$("listaAcessos") || !isGerencia()) return;
-  $("listaAcessos").innerHTML = db.usuarios.map(u => `<div class="alert-item"><span class="status solicitado">${escapeHtml(u.perfil)}</span><strong>${escapeHtml(u.nome || u.usuario)}</strong><small>${escapeHtml(u.usuario)} • Área: ${escapeHtml(u.area_responsavel || "-")} • Auth UID: ${escapeHtml(u.auth_user_id || "não vinculado")}</small></div>`).join("") || `<div class="empty">Nenhum usuário retornado.</div>`;
+  $("listaAcessos").innerHTML = db.usuarios.map(u => `<div class="alert-item"><span class="status solicitado">${escapeHtml(u.perfil)}</span><strong>${escapeHtml(u.nome || u.usuario)}</strong><small>${escapeHtml(u.usuario)} • Área(s): ${escapeHtml(u.area_responsavel || "-")} • Auth UID: ${escapeHtml(u.auth_user_id || "não vinculado")}</small></div>`).join("") || `<div class="empty">Nenhum usuário retornado.</div>`;
 }
 
 function renderAuditoria(){

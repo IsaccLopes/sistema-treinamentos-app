@@ -43,3 +43,12 @@ Exemplo de área:
 - `MANUTENÇÃO MECÂNICA`
 - `ENVASE`
 - `RECEBIMENTO`
+
+
+## V5.1 - Gestor multiáreas
+
+- Perfil `gestor` na tela Acessos.
+- Campo `Área(s) do gestor)` aceita várias áreas separadas por vírgula.
+- Exemplo: `LABORATORIO, RECEBIMENTO, MANUTENÇÃO ELÉTRICA`.
+- Gestor continua vendo somente Painel e Consulta, mas pode filtrar entre as áreas liberadas.
+- Rode `supabase/08_portal_gestor_multiareas.sql` no Supabase.
